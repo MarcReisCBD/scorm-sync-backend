@@ -502,7 +502,7 @@ function connect() {
     });
   })
   .then(function (r) {
-    if (!r.ok) throw new Error('Salle introuvable ou fermée (HTTP ' + r.status + ')');
+    if (!r.ok) return r.json().then(function(b) { throw new Error(b.error || 'Salle introuvable ou fermée (HTTP ' + r.status + ')'); });
     return r.json();
   })
   .then(function (data) {
@@ -601,13 +601,16 @@ function setupSocket() {
   socket.on('vote_result', function (d) {
     var correctAnswer = d.correctAnswer || null;
     var correctArr = Array.isArray(correctAnswer) ? correctAnswer : (correctAnswer ? [correctAnswer] : []);
+    // Exact match : toutes les bonnes réponses doivent être sélectionnées, ni plus ni moins
+    var userIsCorrect = correctArr.length > 0 && selectedValues.length > 0 &&
+      selectedValues.slice().sort().join(',') === correctArr.slice().sort().join(',');
     // Colorer brièvement les boutons sélectionnés avant d'afficher les résultats
     if (selectedValues.length > 0) {
       selectedValues.forEach(function(sv) {
         var btn = document.getElementById('vbtn-' + sv);
         if (btn) {
           btn.classList.remove('choice-selected');
-          btn.classList.add(correctArr.indexOf(sv) >= 0 ? 'voted-correct' : 'voted-wrong');
+          btn.classList.add(userIsCorrect ? 'voted-correct' : 'voted-wrong');
         }
       });
     }

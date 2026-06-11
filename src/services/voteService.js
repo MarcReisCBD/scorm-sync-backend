@@ -33,6 +33,7 @@ async function openVote(roomId, phase = 1, { onExpire, syncPoint } = {}) {
   const updates = {
     status: ROOM_STATUS.VOTE,
     votes: { A: 0, B: 0, C: 0, D: 0 },
+    votersCount: 0,
     votePhase: phase,
     voteOpenedAt: Date.now(),
     ...(phase === 1 ? { vote1Results: null } : {}),
@@ -63,7 +64,8 @@ async function submitVote(roomId, value) {
 
   const votes = { ...room.votes };
   values.forEach(v => { votes[v] = (votes[v] || 0) + 1; });
-  return roomService.updateRoom(roomId, { votes });
+  const votersCount = (room.votersCount || 0) + 1;
+  return roomService.updateRoom(roomId, { votes, votersCount });
 }
 
 async function closeVote(roomId) {

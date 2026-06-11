@@ -102,6 +102,10 @@
         return { degraded: false };
       })
       .catch(function (err) {
+        if (err.message === 'Salle complète') {
+          self._fire('join_error', { message: 'Salle complète' });
+          return { degraded: true, full: true };
+        }
         console.warn('[ScormSync] mode dégradé :', err.message);
         self._enterDegraded(err.message);
         return { degraded: true };
@@ -498,7 +502,13 @@
       headers: headers,
       body: JSON.stringify(body),
     }).then(function (r) {
-      if (!r.ok) throw new Error(r.status + ' ' + path);
+      if (!r.ok) {
+        return r.text().then(function (text) {
+          var msg = r.status + ' ' + path;
+          try { msg = JSON.parse(text).error || msg; } catch (e) {}
+          throw new Error(msg);
+        });
+      }
       return r.json();
     });
   };
@@ -523,7 +533,7 @@
     ['waiting_update',  'vote_open',      'vote_progress', 'vote_result',
      'debate_open',     'vote_ack',       'global_pause',  'global_resume',
      'continue_all',    'skip_sync',      'timer_extended','learner_connected',
-     'question_data',   'session_complete','error']
+     'question_data',   'session_complete','error',         'join_error']
     .forEach(function (ev) {
       s.on(ev, function (d) { self._fire(ev, d); });
     });

@@ -32,9 +32,13 @@ router.post('/join', httpAuthMiddleware, async (req, res) => {
     if (!room) return res.status(404).json({ error: 'Room not found' });
     if (room.status === 'closed') return res.status(410).json({ error: 'Room is closed' });
 
-    // Persist learner name mapping for enriched broadcasts
-    const learnerNames = { ...(room.learnerNames || {}), [req.user.sub]: req.user.name || 'Apprenant' };
-    await roomService.updateRoom(room.id, { learnerNames });
+    // Best-effort capacity pre-filter (not authoritative — parallel joins can race;
+    // the authoritative check is in learner_arrived socket handler under withArrivalLock)
+    const existingNames = room.learnerNames || {};
+    if (!existingNames[req.user.sub] && room.totalLearners > 0 && Object.keys(existingNames).length >= room.totalLearners) {
+      return res.status(403).json({ error: 'Salle complète' });
+    }
+    // Name registration moved to learner_arrived socket handler (atomic under lock)
 
     const token = jwt.sign(
       { sub: req.user.sub, name: req.user.name, role: ROLES.LEARNER, roomId: room.id },

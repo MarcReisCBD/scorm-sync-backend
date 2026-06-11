@@ -544,7 +544,7 @@ Refonte complète de `admin.html` :
 
 ---
 
-## État du projet — Sprint 2C en cours 🔄
+## État du projet — Sprint 2C ✅ Terminé
 
 | Composant | Statut |
 |---|---|
@@ -561,7 +561,7 @@ Refonte complète de `admin.html` :
 | Questions 2–6 propositions (A–F) | ✅ Sprint 2B |
 | Admin onglet Banque — filtres, sélection rapide/manuelle | ✅ Sprint 2B |
 | SCORM charge questions depuis banque (plus de hardcode) | ✅ Sprint 2B |
-| Écran de diffusion présentateur (`/display`) | 🔄 Sprint 2C (en test) |
+| Écran de diffusion présentateur (`/display`) | ✅ Sprint 2C |
 | Intégration vrai module Storyline 360 | ⬜ Sprint 2D |
 | Déploiement Azure | ⬜ Sprint 3 |
 
@@ -793,7 +793,7 @@ ScormSync.sessionComplete({
 
 ---
 
-## Sprint 2C — Écran de diffusion présentateur 🔄 En test
+## Sprint 2C — Écran de diffusion présentateur ✅ Terminé
 
 ### `public/display.html`
 Accessible via `GET /display?room=CODE` — destiné au projecteur/TV du formateur.
@@ -835,6 +835,14 @@ Accessible via `GET /display?room=CODE` — destiné au projecteur/TV du formate
 - [x] Fix `waiting_update` manquant sur SCORM/display : snapshot immédiat envoyé sur `watch_room` et `registerDisplayHandlers` — SCORM et display reçoivent l'état courant des participants même s'ils se connectent après les apprenants
 - [x] Fix race condition `waitingLearners` : verrou en mémoire `withArrivalLock(roomId, fn)` dans `learner.js` — sérialise les `learner_arrived` par room pour éviter que des connexions simultanées n'écrasent les entrées Redis des uns et des autres
 - [x] `src/utils/simulate-voters.js` — script de test : N apprenants simulés, auth → join → vote aléatoire sur `vote_open`, prêt pour la question suivante sur `continue_all`
+- [x] Fix limite participants non respectée : vérification autoritative dans `learner_arrived` sous `withArrivalLock` (HTTP seul insuffisant — race condition Redis sur `learnerNames` avec 10+ joins parallèles)
+- [x] `learnerNames` écrit uniquement sous `withArrivalLock` dans `learner_arrived` (plus dans le handler HTTP `/api/rooms/join` qui ne fait qu'un pre-filter best-effort)
+- [x] Fix compteur votes multi-réponses : champ `votersCount` dans Redis (1 par soumission), `vote_progress.total` utilise `votersCount` au lieu de la somme des lettres
+- [x] Règle métier réponses multiples (exact match) : l'apprenant doit sélectionner exactement toutes les bonnes réponses — comparaison triée dans `vote.html` et `admin.html`
+- [x] UX salle complète : `join_error { message: 'Salle complète' }` affiche `#slide-full` dans le SCORM (fond `#1e3a5f`, blanc) avec boutons **Réessayer** (countdown 5s) et **Continuer en mode solo** — plus de fallback solo silencieux
+- [x] `_post` dans le SDK extrait le message d'erreur du body JSON (avant : `"403 /api/rooms/join"`, après : `"Salle complète"`)
+- [x] `join_error` ajouté aux événements forwardés par `_connectSocket` (couvre aussi le rejet côté socket dans `learner_arrived`)
+- [x] Auto-validation `admin.html` analytics : l'admin émet `join_room` pour rejoindre le channel Socket.io de la salle (les broadcasts ne sont reçus qu'après ce join explicite)
 
 ### Règles importantes
 
@@ -842,6 +850,9 @@ Accessible via `GET /display?room=CODE` — destiné au projecteur/TV du formate
 18. **Ordre middlewares server.js** : les routes explicites (`/admin`, `/vote`, `/display`) doivent être déclarées **avant** `app.use(express.static(...))` — sinon Express static intercepte les chemins sans extension et répond 404 avant que la route ne soit atteinte.
 19. **Snapshot sur connexion tardive** : `watch_room` (SCORM) et `registerDisplayHandlers` (écran de diffusion) envoient immédiatement un `waiting_update` + `question_data` + `vote_open` si applicable. Cela compense l'absence d'historique des broadcasts Socket.io.
 20. **Race condition `waitingLearners`** : quand plusieurs apprenants émettent `learner_arrived` simultanément, le pattern read-modify-write Redis peut causer des écrasements mutuels. Fix : `withArrivalLock(roomId, fn)` dans `learner.js` — Promise chain en mémoire par room, sérialise l'exécution des handlers. Valable uniquement en mode single-process (POC). En prod multi-instance, utiliser un lock distribué Redis.
+21. **Limite participants — authorité socket** : la vérification `totalLearners` dans `POST /api/rooms/join` est un pre-filter best-effort uniquement. La vérification autoritative est dans `learner_arrived` sous `withArrivalLock` (lecture + écriture de `learnerNames` atomiques). C'est là que `socket.emit('join_error', { message: 'Salle complète' })` est émis.
+22. **`learnerNames` — écriture sous lock** : ne jamais écrire `learnerNames` dans le handler HTTP `/api/rooms/join` (race condition garantie sur 10+ joins parallèles). Seul `learner_arrived` (sous `withArrivalLock`) écrit cette map de façon sérialisée.
+23. **`package.sh` obligatoire** : après toute modification de `scorm-test/index.html` ou `src/sdk/scorm-sync-sdk.js`, relancer `bash package.sh [URL]` pour regénérer `scorm-test.zip`. Le SDK est embarqué dans le ZIP à la génération — sans cela, SCORM Cloud charge l'ancienne version.
 
 ---
 

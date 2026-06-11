@@ -74,6 +74,23 @@ function registerLearnerHandlers(io, socket) {
           return;
         }
 
+        // Authoritative capacity check (serialized under withArrivalLock — no race condition).
+        // learnerNames is written here, not in HTTP /rooms/join, to prevent parallel-join races.
+        const learnerNamesSnap = room.learnerNames || {};
+        const isRegistered = !!learnerNamesSnap[user.sub];
+        if (!isRegistered && room.totalLearners > 0 && Object.keys(learnerNamesSnap).length >= room.totalLearners) {
+          logger.warn('[learner_arrived] room full — rejecting new learner', {
+            learnerId: user.sub, registered: Object.keys(learnerNamesSnap).length, max: room.totalLearners,
+          });
+          socket.emit('join_error', { message: 'Salle complète' });
+          return;
+        }
+        // Register name atomically under the lock (first-time arrival only)
+        if (!isRegistered) {
+          learnerNamesSnap[user.sub] = user.name || 'Apprenant';
+          await roomService.updateRoom(roomId, { learnerNames: learnerNamesSnap });
+        }
+
         socket.join(`room:${roomId}`);
         socket.data.roomId = roomId;
 
@@ -172,9 +189,8 @@ function registerLearnerHandlers(io, socket) {
       await roomService.updateRoom(roomId, { learnerAnswers, learnerResponseTimes });
 
       socket.emit('vote_ack', { ok: true });
-      const total = Object.values(updated.votes).reduce((s, n) => s + n, 0);
       io.to(`room:${roomId}`).emit('vote_progress', {
-        total, max: updated.totalLearners,
+        total: updated.votersCount || 0, max: updated.totalLearners,
         learnerId: user.sub, value: normalizedValue.length === 1 ? normalizedValue[0] : normalizedValue, responseTimeMs,
       });
     } catch (err) {

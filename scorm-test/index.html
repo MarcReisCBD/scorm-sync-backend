@@ -274,6 +274,18 @@
       display: none;
     }
 
+    /* ── Room full panel ─────────────────────────────────────────── */
+    #slide-full { justify-content: center; align-items: center; gap: 24px; text-align: center;
+                  background: #1e3a5f; color: #fff; }
+    .room-full-icon  { font-size: 52px; }
+    .room-full-title { font-size: 26px; font-weight: 800; }
+    .room-full-msg   { font-size: 14px; color: rgba(255,255,255,.75); line-height: 1.65; max-width: 340px; }
+    .room-full-btns  { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 320px; }
+    .btn-room-retry  { background: #3b82f6; }
+    .btn-room-solo   { background: rgba(255,255,255,.12); border: 1.5px solid rgba(255,255,255,.3);
+                       color: #fff; }
+    .btn-room-solo:hover:not(:disabled) { background: rgba(255,255,255,.22); opacity: 1; }
+
     /* ── Pause overlay ────────────────────────────────────────────── */
     #pause-overlay {
       display: none;
@@ -432,6 +444,17 @@
       <button class="btn-blue" onclick="closeSCORM()" style="width:100%;margin-top:16px">
         Terminer la session →
       </button>
+    </div>
+  </div>
+
+  <!-- ROOM FULL ──────────────────────────────────────────────────────────── -->
+  <div id="slide-full" class="slide">
+    <div class="room-full-icon">🚫</div>
+    <div class="room-full-title">Salle complète</div>
+    <div class="room-full-msg">Contactez l'animateur pour rejoindre la session,<br>ou continuez en mode solo.</div>
+    <div class="room-full-btns">
+      <button class="btn-room-retry" id="btn-retry" onclick="retryJoin()">Réessayer</button>
+      <button class="btn-room-solo" onclick="startSoloMode()">Continuer en mode solo</button>
     </div>
   </div>
 
@@ -611,6 +634,10 @@ var app = {
 // vote_open reçu avant que qState === 'waiting' (ex: pendant les 1.5s de délai)
 var pendingVoteOpen = null;
 
+// Code conservé pour le retry après "Salle complète"
+var _savedRoomCode = '';
+var _retryTimer = null;
+
 // ── SCORM init ──────────────────────────────────────────────────────────
 window.addEventListener('load', function () {
   var API = getAPI();
@@ -675,12 +702,42 @@ function joinSession() {
 }
 
 function startSoloMode() {
+  if (_retryTimer) { clearInterval(_retryTimer); _retryTimer = null; }
   app.degraded = true;
   setStatus('solo', 'Mode solo');
   _bootSync('');
 }
 
+function showRoomFull(code) {
+  _savedRoomCode = code;
+  document.getElementById('btn-join').disabled = false;
+  document.getElementById('btn-retry').disabled = false;
+  document.getElementById('btn-retry').textContent = 'Réessayer';
+  setStatus('error', 'Salle complète');
+  showSlide('slide-full');
+}
+
+function retryJoin() {
+  if (_retryTimer) { clearInterval(_retryTimer); _retryTimer = null; }
+  var btn = document.getElementById('btn-retry');
+  btn.disabled = true;
+  var countdown = 5;
+  btn.textContent = 'Réessayer dans ' + countdown + 's…';
+  _retryTimer = setInterval(function () {
+    countdown--;
+    if (countdown <= 0) {
+      clearInterval(_retryTimer); _retryTimer = null;
+      btn.textContent = 'Connexion…';
+      _bootSync(_savedRoomCode);
+    } else {
+      btn.textContent = 'Réessayer dans ' + countdown + 's…';
+    }
+  }, 1000);
+}
+
 async function _bootSync(code) {
+  if (_retryTimer) { clearInterval(_retryTimer); _retryTimer = null; }
+  _savedRoomCode = code;
   app.sync = window.ScormSync;
   app.sessionStarted = false;
   _setupHandlers();
@@ -692,6 +749,11 @@ async function _bootSync(code) {
       learnerName: app.studentName,
     });
     app.degraded = r.degraded;
+
+    if (r.full) {
+      // join_error handler already showed slide-full — nothing more to do
+      return;
+    }
 
     if (!r.degraded && code) {
       setStatus('connected', 'Connexion · ' + code);
@@ -960,6 +1022,12 @@ function _setupHandlers() {
     .on('connected',    function ()  { setStatus('connected',   'Connecté au backend'); })
     .on('disconnected', function ()  { setStatus('solo',        'Déconnecté — mode solo'); app.degraded = true; })
     .on('degraded',     function ()  { setStatus('solo',        'Mode solo'); app.degraded = true; })
+
+    .on('join_error', function (d) {
+      if (d && d.message === 'Salle complète') {
+        showRoomFull(_savedRoomCode);
+      }
+    })
 
     .on('learner_connected', function (d) {
       var identity = window.ScormSync.getIdentity();
