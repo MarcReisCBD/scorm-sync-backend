@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz Pairagogique — SCORM Sync</title>
+  <style>
+    :root {
+      --bg:      #f8fafc;
+      --card:    #ffffff;
+      --border:  #e2e8f0;
+      --text:    #1e293b;
+      --muted:   #94a3b8;
+      --blue:    #3b82f6;
+      --green:   #22c55e;
+      --orange:  #f97316;
+      --red:     #ef4444;
+      --purple:  #8b5cf6;
+      --yellow:  #f59e0b;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Status bar ───────────────────────────────────────────────── */
+    #status-bar {
+      padding: 8px 20px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1e293b;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+    #status-bar.s-connecting { background: #1e293b; color: #94a3b8; }
+    #status-bar.s-connected  { background: #14532d; color: #86efac; }
+    #status-bar.s-solo       { background: #78350f; color: #fde68a; }
+    #status-bar.s-error      { background: #7f1d1d; color: #fca5a5; }
+    .sdot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    #status-bar span { margin-left: auto; font-weight: 400; }
+
+    /* ── Main content ─────────────────────────────────────────────── */
+    #content { flex: 1; display: flex; align-items: stretch; }
+
+    .slide { display: none; flex: 1; flex-direction: column; padding: 40px 24px; max-width: 760px; margin: 0 auto; width: 100%; }
+    .slide.active { display: flex; }
+
+    /* ── Welcome ──────────────────────────────────────────────────── */
+    #slide-welcome { justify-content: center; align-items: center; gap: 24px; text-align: center; }
+    .logo { font-size: 40px; }
+    .welcome-title { font-size: 28px; font-weight: 800; color: var(--text); }
+    .welcome-sub   { font-size: 15px; color: var(--muted); }
+    #welcome-name  { color: var(--blue); }
+
+    .join-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+      width: 100%;
+      max-width: 400px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .join-box label { font-size: 13px; font-weight: 600; color: var(--text); }
+    .join-box input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      color: var(--text);
+      text-transform: uppercase;
+      text-align: center;
+      outline: none;
+      transition: border-color .2s;
+    }
+    .join-box input:focus { border-color: var(--blue); }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity .15s, transform .08s;
+      color: #fff;
+    }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    button:hover:not(:disabled) { opacity: .85; }
+    button:active:not(:disabled) { transform: scale(.98); }
+
+    .btn-blue   { background: var(--blue); }
+    .btn-green  { background: var(--green); }
+    .btn-ghost  { background: transparent; color: var(--muted); border: 1.5px solid var(--border); }
+    .btn-ghost:hover:not(:disabled) { background: var(--border); opacity: 1; }
+    .btn-a { background: var(--blue); }
+    .btn-b { background: var(--green); }
+    .btn-c { background: var(--orange); }
+    .btn-d { background: var(--purple); }
+    .btn-a.selected, .btn-b.selected, .btn-c.selected, .btn-d.selected { outline: 4px solid #1e293b; }
+
+    .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+    .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ── Question slide ───────────────────────────────────────────── */
+    #slide-question { gap: 20px; }
+
+    .q-header { display: flex; align-items: center; justify-content: space-between; }
+    .q-number { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+
+    .q-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 28px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .q-text { font-size: 22px; font-weight: 700; line-height: 1.35; color: var(--text); }
+
+    /* Waiting state */
+    #q-waiting { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 20px 0; }
+    .wait-spinner {
+      width: 48px; height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .wait-msg { font-size: 15px; color: var(--muted); text-align: center; }
+    .wait-count { font-size: 32px; font-weight: 800; color: var(--blue); }
+    .wait-label { font-size: 12px; color: var(--muted); text-align: center; }
+
+    /* Vote state */
+    #q-vote { display: flex; flex-direction: column; gap: 16px; }
+
+    /* Timer */
+    .timer-row { display: flex; align-items: center; gap: 10px; }
+    .timer-bar { flex: 1; height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; }
+    .timer-fill { height: 100%; width: 100%; background: var(--blue); border-radius: 5px; transition: width 1s linear, background .3s; }
+    .timer-fill.urgent { background: var(--red); }
+    .timer-text { font-size: 18px; font-weight: 800; font-family: monospace; color: var(--text); min-width: 38px; text-align: right; }
+
+    /* Vote buttons */
+    .vote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .vote-btn { font-size: 16px; padding: 16px 14px; border-radius: 10px; text-align: left; }
+
+    /* Smartphone QR mode */
+    #q-smartphone { flex-direction: column; align-items: center; gap: 14px; }
+    .qr-wrap {
+      padding: 14px;
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .qr-progress { text-align: center; }
+    .qr-count { font-size: 36px; font-weight: 900; color: var(--blue); }
+    .qr-sep   { font-size: 20px; font-weight: 700; color: var(--muted); }
+    .qr-total { font-size: 36px; font-weight: 900; color: var(--muted); }
+    .qr-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* Result state */
+    #q-result { display: flex; flex-direction: column; gap: 16px; }
+
+    .result-bars { display: flex; flex-direction: column; gap: 8px; }
+    .res-row {
+      display: grid;
+      grid-template-columns: 28px 1fr 1fr 52px;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 2px solid transparent;
+      transition: border-color .3s, background .3s;
+    }
+    .res-row.correct { border-color: var(--green); background: #f0fdf4; }
+    .res-row.winner  { border-color: var(--orange); background: #fff7ed; }
+    .res-key  { font-size: 14px; font-weight: 800; color: var(--muted); }
+    .res-text { font-size: 13px; color: var(--text); }
+    .res-track { height: 14px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .res-fill { height: 100%; width: 0%; background: var(--blue); border-radius: 4px; transition: width .5s ease; }
+    .res-row.correct .res-fill { background: var(--green); }
+    .res-row.winner  .res-fill { background: var(--orange); }
+    .res-pct { font-size: 12px; font-weight: 700; color: var(--text); text-align: right; }
+
+    .correct-reveal {
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      text-align: center;
+    }
+    .correct-reveal.ok  { background: #dcfce7; color: #15803d; }
+    .correct-reveal.nok { background: #fff7ed; color: #c2410c; }
+
+    /* ── End slide ────────────────────────────────────────────────── */
+    #slide-end { justify-content: center; align-items: center; gap: 24px; text-align: center; }
+    .end-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 36px 40px;
+      max-width: 420px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+    }
+    #score-value { font-size: 64px; font-weight: 900; line-height: 1; }
+    #score-detail { font-size: 15px; color: var(--muted); }
+    #score-status { font-size: 18px; font-weight: 700; padding: 8px 20px; border-radius: 20px; }
+    #score-status.pass { background: #dcfce7; color: #15803d; }
+    #score-status.fail { background: #fee2e2; color: #b91c1c; }
+    .end-title { font-size: 24px; font-weight: 800; }
+
+    /* ── Continue button row ──────────────────────────────────────── */
+    .btn-row { display: flex; justify-content: flex-end; }
+    #btn-continue { font-size: 15px; padding: 12px 28px; }
+
+    /* ── QR slide ─────────────────────────────────────────────────── */
+    #slide-qr { justify-content: center; align-items: center; }
+    .qr-slide-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      width: 100%;
+      max-width: 580px;
+    }
+    .qr-slide-cols { display: flex; gap: 36px; align-items: flex-start; }
+    .qr-slide-left { display: flex; flex-direction: column; align-items: center; gap: 10px; flex-shrink: 0; }
+    .qr-slide-right { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .qr-instruction { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+    .qr-hello { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .qr-name  { font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 12px; }
+    .qr-waiting-row { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+    .qr-connected-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 14px;
+      background: #dcfce7; border-radius: 8px;
+      color: #15803d; font-size: 13px; font-weight: 700;
+    }
+    /* Mini QR affiché en coin sur les slides question */
+    #q-qr-mini {
+      width: 80px; height: 80px; flex-shrink: 0;
+      background: #fff; border-radius: 8px; overflow: hidden;
+      padding: 3px; border: 1px solid var(--border);
+      display: none;
+    }
+
+    /* ── Pause overlay ────────────────────────────────────────────── */
+    #pause-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, .75);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    #pause-overlay.visible { display: flex; }
+    .pause-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px 56px;
+      text-align: center;
+    }
+    .pause-box h2 { font-size: 28px; font-weight: 800; color: var(--text); margin-bottom: 8px; }
+    .pause-box p  { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- ── Status bar ─────────────────────────────────────────────────────── -->
+<div id="status-bar" class="s-connecting">
+  <div class="sdot"></div>
+  <span id="status-text">Connexion au backend…</span>
+  <span id="status-room"></span>
+</div>
+
+<!-- ── Slides ─────────────────────────────────────────────────────────── -->
+<div id="content">
+
+  <!-- WELCOME ──────────────────────────────────────────────────────────── -->
+  <div id="slide-welcome" class="slide active">
+    <div class="logo">🎓</div>
+    <div class="welcome-title">Bienvenue, <span id="welcome-name">Apprenant</span></div>
+    <div class="welcome-sub">Quiz pairagogique synchronisé</div>
+
+    <div class="join-box">
+      <label for="room-code">Code de salle</label>
+      <input id="room-code" type="text" placeholder="TIGRE-42" maxlength="12" autocomplete="off"
+             oninput="this.value=this.value.toUpperCase()">
+      <button class="btn-blue" id="btn-join" onclick="joinSession()">Rejoindre la session</button>
+      <div class="divider">ou</div>
+      <button class="btn-ghost" onclick="startSoloMode()">Continuer en mode solo</button>
+    </div>
+  </div>
+
+  <!-- QR SLIDE ────────────────────────────────────────────────────────── -->
+  <div id="slide-qr" class="slide">
+    <div class="qr-slide-card">
+      <div class="q-header">
+        <span class="q-number">Salle · <strong id="qr-room-label">—</strong></span>
+      </div>
+      <div class="qr-slide-cols">
+        <div class="qr-slide-left">
+          <div class="qr-instruction">Scannez avec votre smartphone</div>
+          <div class="qr-wrap">
+            <div id="qr-slide-container"></div>
+          </div>
+        </div>
+        <div class="qr-slide-right">
+          <div class="qr-hello">Bonjour,</div>
+          <div class="qr-name" id="qr-student-name">Apprenant</div>
+
+          <div id="qr-status" class="qr-waiting-row">
+            <div class="wait-spinner" style="width:20px;height:20px;border-width:3px"></div>
+            <span>En attente du smartphone…</span>
+          </div>
+
+          <div id="qr-connected-msg" class="qr-connected-badge" style="display:none">
+            <span id="qr-connected-name">Smartphone connecté</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUESTION (slide unique, contenu dynamique) ─────────────────────── -->
+  <div id="slide-question" class="slide">
+    <div class="q-header">
+      <span class="q-number" id="q-number">Question 1 / 3</span>
+      <div id="q-qr-mini"></div>
+    </div>
+
+    <div class="q-card">
+      <!-- Texte de la question (affiché dans tous les états) -->
+      <div class="q-text" id="q-text">…</div>
+
+      <!-- ── État : ATTENTE ── -->
+      <div id="q-waiting">
+        <div class="wait-spinner"></div>
+        <div class="wait-count" id="wait-count">—</div>
+        <div class="wait-label">participants au sas</div>
+        <div class="wait-msg">En attente des autres participants…</div>
+      </div>
+
+      <!-- ── État : VOTE ── -->
+      <div id="q-vote" style="display:none">
+        <!-- Timer partagé (dégradé + smartphone) -->
+        <div class="timer-row">
+          <div class="timer-bar"><div class="timer-fill" id="timer-fill"></div></div>
+          <span class="timer-text" id="timer-text">45s</span>
+        </div>
+
+        <!-- Mode dégradé : boutons A/B/C/D sur le PC -->
+        <div id="q-vote-buttons" class="vote-grid">
+          <button class="vote-btn btn-a" id="vbtn-A" onclick="submitVote('A')">A</button>
+          <button class="vote-btn btn-b" id="vbtn-B" onclick="submitVote('B')">B</button>
+          <button class="vote-btn btn-c" id="vbtn-C" onclick="submitVote('C')">C</button>
+          <button class="vote-btn btn-d" id="vbtn-D" onclick="submitVote('D')">D</button>
+        </div>
+
+        <!-- Mode connecté : QR Code + compteur -->
+        <div id="q-smartphone">
+          <p style="color:var(--muted);font-size:14px;font-weight:600">Répondez sur votre smartphone</p>
+          <div class="qr-wrap">
+            <div id="qr-vote-container"></div>
+          </div>
+          <div class="qr-progress">
+            <span class="qr-count" id="vote-progress-count">0</span>
+            <span class="qr-sep"> / </span>
+            <span class="qr-total" id="vote-progress-total">?</span>
+            <div class="qr-label">participants ont répondu</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── État : RÉSULTAT ── -->
+      <div id="q-result" style="display:none">
+        <div class="result-bars" id="result-bars">
+          <div class="res-row" id="res-A"><span class="res-key">A</span><span class="res-text" id="res-txt-A"></span><div class="res-track"><div class="res-fill" id="res-fill-A"></div></div><span class="res-pct" id="res-pct-A">0%</span></div>
+          <div class="res-row" id="res-B"><span class="res-key">B</span><span class="res-text" id="res-txt-B"></span><div class="res-track"><div class="res-fill" id="res-fill-B"></div></div><span class="res-pct" id="res-pct-B">0%</span></div>
+          <div class="res-row" id="res-C"><span class="res-key">C</span><span class="res-text" id="res-txt-C"></span><div class="res-track"><div class="res-fill" id="res-fill-C"></div></div><span class="res-pct" id="res-pct-C">0%</span></div>
+          <div class="res-row" id="res-D"><span class="res-key">D</span><span class="res-text" id="res-txt-D"></span><div class="res-track"><div class="res-fill" id="res-fill-D"></div></div><span class="res-pct" id="res-pct-D">0%</span></div>
+        </div>
+        <div class="correct-reveal" id="correct-reveal"></div>
+      </div>
+    </div>
+
+    <!-- Continue (désactivé jusqu'à continue_all) -->
+    <div class="btn-row">
+      <button class="btn-blue" id="btn-continue" disabled onclick="nextQuestion()">
+        Continuer →
+      </button>
+    </div>
+  </div>
+
+  <!-- END ──────────────────────────────────────────────────────────────── -->
+  <div id="slide-end" class="slide">
+    <div class="end-title">Résultats</div>
+    <div class="end-card">
+      <div id="score-value">—</div>
+      <div id="score-detail"></div>
+      <div id="score-status" class="pass"></div>
+      <button class="btn-blue" onclick="closeSCORM()" style="width:100%;margin-top:16px">
+        Terminer la session →
+      </button>
+    </div>
+  </div>
+
+</div><!-- #content -->
+
+<!-- ── Pause overlay ──────────────────────────────────────────────────── -->
+<div id="pause-overlay">
+  <div class="pause-box">
+    <h2>⏸ Session en pause</h2>
+    <p>Le formateur reprendra la session dans quelques instants.</p>
+  </div>
+</div>
+
+<!-- SDK Bundle (socket.io + qrcode + scorm-sync-sdk) — injecté par package.sh -->
+<script id="sdk-bundle">%%SDK_CONTENT%%</script>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════════════
+// ── CONFIGURATION — mettre à jour avec la nouvelle URL ngrok ──────────
+var BACKEND_URL = 'https://eleanor-ungrappled-adaline.ngrok-free.dev';
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── Stub solo (fallback si bundle SDK absent) ────────────────────────
+if (!window.ScormSync || !window.ScormSync._loaded) {
+(function () {
+  var _h = {}, _sp, _active, _timers = [];
+  function fire(ev, d) { var fn = _h[ev]; if (fn) fn(d); }
+  window.ScormSync = {
+    _stub: true,
+    init: function (url) { this._url = url; return this; },
+    on:   function (ev, fn) { _h[ev] = fn; return this; },
+    join: function () {
+      _sp = null; _active = false; _timers.forEach(clearTimeout); _timers = [];
+      return Promise.resolve({ degraded: true });
+    },
+    arrived: function (sp) {
+      _sp = sp;
+      fire('waiting_update', { syncPoint: sp, waiting: 1, total: 1, learners: [] });
+      var t = setTimeout(function () {
+        _active = true;
+        fire('vote_open', { syncPoint: sp, timerSeconds: 20, isSecondVote: false });
+        var t2 = setTimeout(function () {
+          if (!_active) return;
+          _active = false;
+          fire('vote_result', { votes: { A:0,B:0,C:0,D:0 }, vote1Results: null, syncPoint: sp });
+          setTimeout(function () { fire('continue_all'); }, 2500);
+        }, 20000);
+        _timers.push(t2);
+      }, 1500);
+      _timers.push(t);
+    },
+    vote: function (v) {
+      if (!_active) return;
+      _active = false;
+      fire('vote_ack', { ok: true });
+      var votes = { A:0,B:0,C:0,D:0 };
+      votes[v] = 1;
+      _timers.forEach(clearTimeout); _timers = [];
+      setTimeout(function () {
+        fire('vote_result', { votes: votes, vote1Results: null, syncPoint: _sp });
+        setTimeout(function () { fire('continue_all'); }, 2500);
+      }, 500);
+    },
+    sessionComplete: function () {},
+    isDegraded:      function () { return true; },
+    destroy:         function () { _timers.forEach(clearTimeout); },
+    generateQRCode:  function (divId) {
+      var c = document.getElementById(divId);
+      if (c) c.innerHTML = '<div style="padding:16px;text-align:center;color:#94a3b8;font-size:12px;font-weight:600">Mode solo</div>';
+      return Promise.resolve(null);
+    },
+    registerToken:   function () { return Promise.resolve('SOLO'); },
+    getIdentity:     function () { return { studentId: null, studentName: null }; },
+    renderQR:        function () {},
+  };
+})();
+} // fin guard stub
+
+// ── Init SDK — différé dans window.onload (LMSGetValue exige LMSInitialize) ──
+if (!window.ScormSync._loaded) {
+  console.warn('[SDK] Bundle manquant — mode solo (relancer package.sh)');
+}
+
+// ── Questions (fallback mode solo — remplacées depuis le backend après join) ──
+var QUESTIONS = [
+  { id: 'q1', text: 'Quelle est la capitale de la France ?', choices: { A: 'Berlin', B: 'Paris', C: 'Madrid', D: 'Rome' }, correct: 'B' },
+  { id: 'q2', text: 'Combien font 7 × 8 ?',   choices: { A: '54',     B: '56',   C: '48',    D: '63'  }, correct: 'B' },
+  { id: 'q3', text: 'Quel langage utilise Node.js ?',         choices: { A: 'Python', B: 'Ruby', C: 'JavaScript', D: 'PHP' }, correct: 'C' },
+];
+
+// Charge les questions du quiz depuis le backend et remplace le tableau QUESTIONS.
+// Retourne true si succès, false en cas d'erreur (message affiché via showError).
+async function loadQuestions(roomId) {
+  console.log('[SCORM] loadQuestions start, roomId:', roomId);
+  var url = BACKEND_URL + '/api/rooms/' + roomId + '/quiz/quiz1/questions';
+  console.log('[SCORM] fetch URL:', url);
+  try {
+    var resp = await fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+    console.log('[SCORM] fetch status:', resp.status);
+    var data = await resp.json();
+    console.log('[SCORM] fetch data:', JSON.stringify(data).substring(0, 200));
+    if (data.length > 0) {
+      console.log('[SCORM] API q[0] multiple_correct:', data[0].multiple_correct, '| correct:', JSON.stringify(data[0].correct));
+    }
+    if (!Array.isArray(data) || data.length === 0) {
+      showError('Aucune question configurée pour cette salle. Contactez votre formateur.');
+      return false;
+    }
+    QUESTIONS = data.map(function (q, i) {
+      var cho = {};
+      (q.choices || []).forEach(function (c) { cho[c.letter] = c.text; });
+      return { id: q.id || ('q' + (i + 1)), text: q.text, choices: cho, correct: q.correct, multiple_correct: q.multiple_correct || 0 };
+    });
+    if (QUESTIONS.length > 0) {
+      console.log('[SCORM] QUESTIONS[0] after map — multiple_correct:', QUESTIONS[0].multiple_correct, '| correct:', JSON.stringify(QUESTIONS[0].correct));
+    }
+    console.log('[SCORM] QUESTIONS chargées:', QUESTIONS.length);
+    return true;
+  } catch (e) {
+    console.log('[SCORM] ERREUR loadQuestions:', e.message);
+    showError('Impossible de charger les questions : ' + e.message);
+    return false;
+  }
+}
+
+// ── SCORM 1.2 API — recherche dans parents ET opener ────────────────────
+function getAPI() {
+  // Chercher dans la hiérarchie de frames parentes
+  var win = window;
+  for (var i = 0; i < 10; i++) {
+    if (win.API) return win.API;
+    if (!win.parent || win.parent === win) break;
+    win = win.parent;
+  }
+  // Chercher depuis window.top et ses enfants
+  try {
+    if (window.top && window.top.API) return window.top.API;
+  } catch (e) {}
+  // Chercher depuis la fenêtre opener (cas certains LMS)
+  try {
+    if (window.opener) {
+      win = window.opener;
+      for (var j = 0; j < 10; j++) {
+        if (win.API) return win.API;
+        if (!win.parent || win.parent === win) break;
+        win = win.parent;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+// Wrapper léger pour les appels non-critiques (get student_id, etc.)
+var SCORM = {
+  get: function (k) {
+    try { var a = getAPI(); return a ? a.LMSGetValue(k) || '' : ''; } catch(e) { return ''; }
+  },
+};
+
+// ── App state ───────────────────────────────────────────────────────────
+var app = {
+  sync:           null,
+  degraded:       false,
+  studentId:      'learner-scorm',
+  studentName:    'Apprenant',
+  sessionStarted: false,  // guard : learner_connected ne déclenche startSession qu'une fois
+  currentQ:       -1,
+  qState:         null,   // 'waiting' | 'vote' | 'result'
+  voted:          null,
+  timerHandle:    null,
+  timerMax:       45,
+  answers:        [],
+};
+
+// vote_open reçu avant que qState === 'waiting' (ex: pendant les 1.5s de délai)
+var pendingVoteOpen = null;
+
+// ── SCORM init ──────────────────────────────────────────────────────────
+window.addEventListener('load', function () {
+  var API = getAPI();
+  if (API) {
+    try {
+      API.LMSInitialize('');
+      API.LMSSetValue('cmi.core.lesson_status', 'incomplete');
+      API.LMSCommit('');
+      console.log('[SCORM] LMSInitialize OK');
+    } catch (e) { console.warn('[SCORM] init error:', e); }
+  } else {
+    console.warn('[SCORM] API non trouvée au chargement — mode standalone');
+  }
+
+  var sid  = SCORM.get('cmi.core.student_id');
+  var name = SCORM.get('cmi.core.student_name');
+  if (sid)  app.studentId   = sid;
+  if (name) { app.studentName = name; document.getElementById('welcome-name').textContent = name; }
+
+  // Init SDK ici — après LMSInitialize, LMSGetValue retourne les vraies valeurs
+  if (window.ScormSync._loaded && BACKEND_URL) {
+    window.ScormSync.init(BACKEND_URL);
+    var id = window.ScormSync.getIdentity();
+    console.log('[SDK] init après LMSInitialize — studentId:', id.studentId, '/ studentName:', id.studentName);
+  }
+});
+
+window.addEventListener('beforeunload', function () {
+  if (app.sync) app.sync.destroy();
+  // LMSFinish est appelé explicitement dans finishSCORM() au clic "Terminer"
+});
+
+// ── Status bar ──────────────────────────────────────────────────────────
+function setStatus(type, text) {
+  var bar = document.getElementById('status-bar');
+  bar.className = 's-' + type;
+  document.getElementById('status-text').textContent = text;
+}
+
+function showError(msg) {
+  setStatus('error', msg);
+  var qrCard = document.querySelector('.qr-slide-card');
+  if (qrCard) {
+    qrCard.innerHTML = '<div style="padding:32px 24px;color:#ef4444;font-size:15px;font-weight:600;text-align:center;line-height:1.6">' + msg + '</div>';
+  }
+}
+
+// ── Slides ──────────────────────────────────────────────────────────────
+function showSlide(id) {
+  document.querySelectorAll('.slide').forEach(function (s) { s.classList.remove('active'); });
+  document.getElementById(id).classList.add('active');
+}
+
+// ── Join / Solo ─────────────────────────────────────────────────────────
+
+function joinSession() {
+  var code = (document.getElementById('room-code').value || '').trim().toUpperCase();
+  if (!code) { alert('Entrez un code de salle'); return; }
+  document.getElementById('btn-join').disabled = true;
+  setStatus('connecting', 'Connexion en cours…');
+  _bootSync(code);
+}
+
+function startSoloMode() {
+  app.degraded = true;
+  setStatus('solo', 'Mode solo');
+  _bootSync('');
+}
+
+async function _bootSync(code) {
+  app.sync = window.ScormSync;
+  app.sessionStarted = false;
+  _setupHandlers();
+
+  try {
+    var r = await app.sync.join({
+      code:        code,
+      learnerId:   app.studentId,
+      learnerName: app.studentName,
+    });
+    app.degraded = r.degraded;
+
+    if (!r.degraded && code) {
+      setStatus('connected', 'Connexion · ' + code);
+      document.getElementById('status-room').textContent = code;
+      var identity = window.ScormSync.getIdentity();
+      document.getElementById('qr-room-label').textContent   = code;
+      document.getElementById('qr-student-name').textContent = identity.studentName || app.studentName;
+
+      // Slide QR affichée en premier avec spinner "Chargement des questions…"
+      document.querySelector('#qr-status span').textContent = 'Chargement des questions…';
+      showSlide('slide-qr');
+
+      var roomId = window.ScormSync.getRoomId();
+      console.log('[SCORM] _bootSync roomId:', roomId);
+      if (roomId) {
+        console.log('[SCORM] avant loadQuestions');
+        var loaded = await loadQuestions(roomId);
+        console.log('[SCORM] loadQuestions result:', loaded, 'QUESTIONS.length:', QUESTIONS.length);
+        if (!loaded) return;  // showError déjà appelé
+      } else {
+        console.log('[SCORM] WARN — roomId null, loadQuestions ignoré → fallback hardcodé');
+      }
+
+      setStatus('connected', 'Connecté · ' + code);
+      document.querySelector('#qr-status span').textContent = 'En attente du smartphone…';
+      window.ScormSync.generateQRCode('qr-slide-container', code).then(function (url) {
+        app.voteUrl = url;
+      });
+    } else {
+      setStatus('solo', 'Mode solo');
+      _enterQuestion(0);
+    }
+  } catch (e) {
+    setStatus('error', 'Erreur : ' + e.message);
+    app.degraded = true;
+    _enterQuestion(0);
+  }
+}
+
+function startSession() {
+  _enterQuestion(0);
+}
+
+// ── Question flow ───────────────────────────────────────────────────────
+function _enterQuestion(index) {
+  app.currentQ = index;
+  app.voted    = null;
+  clearInterval(app.timerHandle);
+
+  var q = QUESTIONS[index];
+  document.getElementById('q-number').textContent = 'Question ' + (index + 1) + ' / ' + QUESTIONS.length;
+  document.getElementById('q-text').textContent   = q.text;
+
+  // Populate vote buttons
+  ['A', 'B', 'C', 'D'].forEach(function (k) {
+    var btn = document.getElementById('vbtn-' + k);
+    btn.textContent = k + ' — ' + q.choices[k];
+    btn.disabled    = false;
+    btn.className   = 'vote-btn btn-' + k.toLowerCase();
+  });
+
+  // Reset result bars
+  ['A', 'B', 'C', 'D'].forEach(function (k) {
+    document.getElementById('res-txt-' + k).textContent  = q.choices[k];
+    document.getElementById('res-fill-' + k).style.width = '0%';
+    document.getElementById('res-pct-' + k).textContent  = '0%';
+    document.getElementById('res-' + k).className = 'res-row';
+  });
+
+  document.getElementById('btn-continue').disabled = true;
+  document.getElementById('wait-count').textContent = '—';
+  // 'loading' : sendQuestionData pas encore ACKé — pendingVoteOpen ne doit pas être consommé
+  _setQState('loading');
+  showSlide('slide-question');
+
+  if (!app.degraded && app.voteUrl) {
+    var miniEl = document.getElementById('q-qr-mini');
+    miniEl.style.display = 'block';
+    window.ScormSync.renderQR('q-qr-mini', app.voteUrl, 72);
+  }
+
+  console.log('[SCORM] _enterQuestion index:', index, '/ q.id:', q.id, '/ degraded:', app.degraded);
+  if (!app.degraded) {
+    console.log('[SCORM] sendQuestionData start, q.id:', q.id);
+    window.ScormSync.sendQuestionData(q.id, q.text, q.choices, q.correct, q.multiple_correct || 0)
+      .then(function (ack) {
+        console.log('[SCORM] sendQuestionData ACK reçu:', JSON.stringify(ack), '— q.id:', q.id);
+        // questionData maintenant dans Redis — transition vers 'waiting'
+        _setQState('waiting');
+        if (pendingVoteOpen) {
+          // Un vote était en attente (formateur a forcé pendant result/loading)
+          console.log('[SCORM] pendingVoteOpen appliqué après ACK, sp:', pendingVoteOpen.syncPoint);
+          var pv = pendingVoteOpen;
+          pendingVoteOpen = null;
+          _setQState('vote');
+          _startTimer(pv.timerSeconds || 45);
+        } else {
+          app.sync.arrived(q.id);
+        }
+      });
+  } else {
+    _setQState('waiting');
+    app.sync.arrived(q.id);
+  }
+}
+
+function _setQState(state) {
+  app.qState = state;
+  // 'loading' = attente ACK sendQuestionData — affiche le même spinner que 'waiting'
+  document.getElementById('q-waiting').style.display = (state === 'waiting' || state === 'loading') ? 'flex' : 'none';
+  document.getElementById('q-vote'   ).style.display = state === 'vote'    ? 'flex'  : 'none';
+  document.getElementById('q-result' ).style.display = state === 'result'  ? 'flex'  : 'none';
+
+  if (state === 'vote') {
+    var sm = !app.degraded;
+    document.getElementById('q-vote-buttons').style.display = sm ? 'none' : 'grid';
+    document.getElementById('q-smartphone'  ).style.display = sm ? 'flex' : 'none';
+    if (sm && app.voteUrl) {
+      document.getElementById('vote-progress-count').textContent = '0';
+      document.getElementById('vote-progress-total').textContent = '?';
+      window.ScormSync.renderQR('qr-vote-container', app.voteUrl, 192);
+    }
+  }
+}
+
+function submitVote(value) {
+  if (app.qState !== 'vote' || app.voted) return;
+  app.voted = value;
+  document.getElementById('vbtn-' + value).classList.add('selected');
+  ['A', 'B', 'C', 'D'].forEach(function (k) {
+    document.getElementById('vbtn-' + k).disabled = true;
+  });
+  app.sync.vote(value);
+}
+
+function _showResult(votes) {
+  clearInterval(app.timerHandle);
+  var q     = QUESTIONS[app.currentQ];
+  var total = Object.values(votes).reduce(function (a, b) { return a + b; }, 0);
+  var winner = total > 0
+    ? Object.entries(votes).sort(function (a, b) { return b[1] - a[1]; })[0][0]
+    : null;
+
+  ['A', 'B', 'C', 'D'].forEach(function (k) {
+    var v   = votes[k] || 0;
+    var pct = total > 0 ? Math.round(v / total * 100) : 0;
+    document.getElementById('res-fill-' + k).style.width = pct + '%';
+    document.getElementById('res-pct-' + k).textContent  = pct + '%';
+    var row = document.getElementById('res-' + k);
+    if (k === q.correct) row.classList.add('correct');
+    else if (k === winner) row.classList.add('winner');
+  });
+
+  var isCorrect = (winner === q.correct);
+  app.answers.push({ syncPoint: q.id, winner: winner, correct: q.correct, isCorrect: isCorrect });
+
+  var reveal = document.getElementById('correct-reveal');
+  reveal.textContent = (isCorrect ? '✓ ' : '✗ ') +
+    'Bonne réponse : ' + q.correct + ' — ' + q.choices[q.correct];
+  reveal.className = 'correct-reveal ' + (isCorrect ? 'ok' : 'nok');
+
+  _setQState('result');
+
+  var btnContinue = document.getElementById('btn-continue');
+  btnContinue.disabled = true;
+  btnContinue.textContent = 'En attente du formateur…';
+}
+
+function _enableContinue() {
+  if (app.qState === 'result') {
+    nextQuestion();
+  }
+}
+
+function nextQuestion() {
+  var next = app.currentQ + 1;
+  if (next < QUESTIONS.length) {
+    _enterQuestion(next);
+  } else {
+    _showEndSlide();
+  }
+}
+
+// ── Timer ───────────────────────────────────────────────────────────────
+function _startTimer(seconds) {
+  clearInterval(app.timerHandle);
+  app.timerMax = seconds;
+  var remaining = seconds;
+  var fill = document.getElementById('timer-fill');
+  var text = document.getElementById('timer-text');
+
+  fill.style.transition = 'none';
+  fill.style.width = '100%';
+  fill.classList.remove('urgent');
+  text.textContent = seconds + 's';
+
+  app.timerHandle = setInterval(function () {
+    remaining--;
+    var pct = Math.max(0, remaining / seconds * 100);
+    fill.style.transition = 'width 1s linear, background .3s';
+    fill.style.width = pct + '%';
+    text.textContent = remaining + 's';
+    if (remaining <= 10) fill.classList.add('urgent');
+
+    if (remaining <= 0) {
+      clearInterval(app.timerHandle);
+      // En mode dégradé sans vote : résultat vide puis continue auto
+      if (app.degraded && app.qState === 'vote') {
+        _showResult({ A: 0, B: 0, C: 0, D: 0 });
+        setTimeout(_enableContinue, 1500);
+      }
+    }
+  }, 1000);
+}
+
+// ── End slide ───────────────────────────────────────────────────────────
+function _showEndSlide() {
+  var total   = QUESTIONS.length;
+  var correct = app.answers.filter(function (a) { return a.isCorrect; }).length;
+  var score   = Math.round(correct / total * 100);
+
+  document.getElementById('score-value').textContent  = score + '%';
+  document.getElementById('score-detail').textContent = correct + ' / ' + total + ' questions correctes (vote collectif)';
+  var statusEl = document.getElementById('score-status');
+  statusEl.textContent = score >= 50 ? '✓ Réussi' : '✗ À retravailler';
+  statusEl.className   = score >= 50 ? 'pass' : 'fail';
+
+  app._finalScore   = score;
+  app._finalCorrect = correct;
+
+  showSlide('slide-end');
+}
+
+// Envoie le score au LMS SANS fermer le module (pas de LMSFinish)
+function sendScoreToLMS(score, correct, total) {
+  var API = getAPI();
+  if (!API) { console.warn('[SCORM] API non trouvée — score non reporté'); return; }
+  console.log('[SCORM] sendScoreToLMS score:', score, correct + '/' + total);
+  try {
+    API.LMSInitialize('');
+    API.LMSSetValue('cmi.core.score.raw',     String(score));
+    API.LMSSetValue('cmi.core.score.min',     '0');
+    API.LMSSetValue('cmi.core.score.max',     '100');
+    API.LMSSetValue('cmi.core.lesson_status', score >= 50 ? 'passed' : 'failed');
+    var r = API.LMSCommit('');
+    console.log('[SCORM] LMSCommit result:', r);
+  } catch (e) { console.error('[SCORM] sendScoreToLMS error:', e); }
+}
+
+// Ferme le module SCORM — appelé uniquement au clic "Terminer la session"
+function closeSCORM() {
+  var API = getAPI();
+  if (API) {
+    try {
+      API.LMSSetValue('cmi.core.exit', '');
+      API.LMSCommit('');
+      var r = API.LMSFinish('');
+      console.log('[SCORM] LMSFinish result:', r);
+    } catch (e) { console.error('[SCORM] closeSCORM error:', e); }
+  }
+}
+
+// ── Sync event handlers ─────────────────────────────────────────────────
+function _setupHandlers() {
+  app.sync
+    .on('connected',    function ()  { setStatus('connected',   'Connecté au backend'); })
+    .on('disconnected', function ()  { setStatus('solo',        'Déconnecté — mode solo'); app.degraded = true; })
+    .on('degraded',     function ()  { setStatus('solo',        'Mode solo'); app.degraded = true; })
+
+    .on('learner_connected', function (d) {
+      var identity = window.ScormSync.getIdentity();
+      console.log('[SCORM] learner_connected reçu:', JSON.stringify(d), '/ myId:', identity.studentId, '/ sessionStarted:', app.sessionStarted);
+      if (app.sessionStarted) return;
+      var myId = identity.studentId;
+      if (myId && d.learnerId !== myId) return;
+      app.sessionStarted = true;
+      document.getElementById('qr-status').style.display = 'none';
+      document.getElementById('qr-connected-msg').style.display = 'flex';
+      document.getElementById('qr-connected-name').textContent = '✓ Smartphone connecté — ' + d.learnerName;
+      setTimeout(function () { startSession(); }, 1500);
+    })
+
+    .on('waiting_update', function (d) {
+      document.getElementById('wait-count').textContent =
+        d.waiting + ' / ' + d.total;
+    })
+
+    .on('vote_open', function (d) {
+      console.log('[SCORM] vote_open reçu, qState:', app.qState, '/ currentQ:', app.currentQ, '/ data:', JSON.stringify(d));
+      if (app.qState === 'waiting') {
+        _setQState('vote');
+        _startTimer(d.timerSeconds || 45);
+        return;
+      }
+      // vote_open arrivé trop tôt (SCORM encore sur slide QR ou avant _enterQuestion)
+      console.log('[SCORM] vote_open mis en attente — qState:', app.qState);
+      pendingVoteOpen = d;
+      // Déclencher startSession si on est toujours sur la slide QR
+      if (!app.sessionStarted && document.getElementById('slide-qr').classList.contains('active')) {
+        console.log('[SCORM] vote_open force startSession anticipé');
+        app.sessionStarted = true;
+        startSession();
+      }
+    })
+
+    .on('vote_progress', function (d) {
+      document.getElementById('vote-progress-count').textContent = d.total || 0;
+      document.getElementById('vote-progress-total').textContent = d.max   || '?';
+    })
+
+    .on('vote_result', function (d) {
+      if (app.qState === 'vote' || app.qState === 'waiting') {
+        _showResult(d.votes || { A: 0, B: 0, C: 0, D: 0 });
+        // Dernière question : fin automatique après 4 secondes
+        if (app.currentQ === QUESTIONS.length - 1 && !app.degraded) {
+          console.log('[SCORM] dernière question — fin automatique dans 4s');
+          setTimeout(function () {
+            _showEndSlide();
+            var sc = app._finalScore; var co = app._finalCorrect; var to = QUESTIONS.length;
+            sendScoreToLMS(sc, co, to);
+            if (app.sync && !app.degraded) {
+              app.sync.sessionComplete({ score: sc, correct: co, total: to });
+              app.sync.continueAllAuto(sc, co, to);
+            }
+          }, 4000);
+        }
+      }
+    })
+
+    .on('continue_all', function () {
+      // Sur la slide QR : le formateur force l'avance sans attendre le smartphone
+      if (document.getElementById('slide-qr').classList.contains('active')) {
+        startSession();
+      } else {
+        _enableContinue();
+      }
+    })
+    .on('skip_sync', _enableContinue)
+
+    .on('global_pause', function () {
+      document.getElementById('pause-overlay').classList.add('visible');
+    })
+    .on('global_resume', function () {
+      document.getElementById('pause-overlay').classList.remove('visible');
+    })
+
+    .on('timer_extended', function (d) {
+      // Ajoute le temps au timer courant
+      if (app.timerHandle && d && d.extraSeconds) {
+        // Le timer reprend avec le temps restant + extra
+        clearInterval(app.timerHandle);
+        var fill = document.getElementById('timer-fill');
+        var secs = parseInt(document.getElementById('timer-text').textContent) + d.extraSeconds;
+        _startTimer(secs);
+      }
+    });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCORM Sync — Test</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      background: #0d0f17;
+      color: #cbd5e1;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 10px 16px;
+      background: #151824;
+      border-bottom: 1px solid #1e2540;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 14px; font-weight: 600; color: #f1f5f9; }
+    #global-status { font-size: 11px; color: #475569; margin-left: auto; }
+
+    /* ── 3-column layout ── */
+    .panels {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1px;
+      background: #1e2540;
+      overflow: hidden;
+    }
+    .panel {
+      background: #151824;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Panel header ── */
+    .panel-head {
+      padding: 8px 12px;
+      background: #1a1f33;
+      border-bottom: 1px solid #1e2540;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .panel-head h2 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #94a3b8; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #334155; flex-shrink: 0; transition: background .3s; }
+    .dot.ok  { background: #22c55e; }
+    .dot.err { background: #ef4444; }
+
+    /* ── Panel body (controls) ── */
+    .panel-body { padding: 10px 12px; flex-shrink: 0; }
+
+    .section { margin-bottom: 10px; }
+    .section-label {
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .07em; color: #334155; margin-bottom: 5px;
+    }
+    .row { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-bottom: 5px; }
+
+    input[type="text"], input[type="number"] {
+      background: #0d0f17; border: 1px solid #1e2540; color: #e2e8f0;
+      padding: 4px 7px; border-radius: 4px; font-size: 12px; min-width: 0; flex: 1;
+    }
+    input[type="text"]:focus, input[type="number"]:focus { outline: none; border-color: #3b82f6; }
+
+    button {
+      padding: 4px 9px; border-radius: 4px; border: none; font-size: 11px;
+      font-weight: 600; cursor: pointer; white-space: nowrap; transition: opacity .15s;
+      color: #fff;
+    }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    button:hover:not(:disabled) { opacity: .8; }
+    .bp  { background: #3b82f6; }
+    .bg  { background: #22c55e; }
+    .br  { background: #ef4444; }
+    .bw  { background: #f59e0b; }
+    .bs  { background: #334155; color: #cbd5e1; }
+    .bv  { background: #8b5cf6; }
+
+    /* vote buttons bigger */
+    .bvote { font-size: 13px; padding: 6px 12px; min-width: 36px; }
+
+    /* ── Room code ── */
+    .room-code {
+      font-size: 26px; font-weight: 800; letter-spacing: .06em; color: #60a5fa; margin: 4px 0 2px;
+    }
+    .room-id { font-size: 10px; color: #334155; margin-bottom: 8px; font-family: monospace; }
+
+    /* ── State table ── */
+    .state-table {
+      display: grid; grid-template-columns: 80px 1fr;
+      gap: 2px 8px; background: #0d0f17; padding: 7px 9px;
+      border-radius: 4px; font-size: 11px; margin-bottom: 6px;
+    }
+    .sk { color: #475569; }
+    .sv { font-family: monospace; color: #e2e8f0; }
+    .sv.waiting  { color: #60a5fa; }
+    .sv.vote     { color: #f59e0b; }
+    .sv.debate   { color: #a78bfa; }
+    .sv.result   { color: #34d399; }
+    .sv.paused   { color: #f87171; }
+    .sv.closed   { color: #334155; }
+    .sv.content  { color: #94a3b8; }
+
+    /* ── Votes bar chart ── */
+    .vote-bars { display: flex; gap: 5px; margin-top: 4px; }
+    .vbar-col { flex: 1; display: flex; flex-direction: column; align-items: center; }
+    .vbar-track {
+      width: 100%; height: 36px; background: #1e2540; border-radius: 3px 3px 0 0;
+      display: flex; align-items: flex-end; overflow: hidden;
+    }
+    .vbar-fill { width: 100%; background: #3b82f6; transition: height .35s ease; border-radius: 3px 3px 0 0; }
+    .vbar-label { font-size: 10px; color: #475569; margin-top: 2px; }
+    .vbar-count { font-size: 12px; font-weight: 700; color: #e2e8f0; }
+
+    /* ── Log ── */
+    .panel-log {
+      flex: 1; overflow-y: auto; padding: 6px 10px;
+      background: #0a0c12; border-top: 1px solid #1e2540;
+      font-family: 'Courier New', monospace; font-size: 10.5px;
+    }
+    .log-head { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #1e2540; margin-bottom: 4px; }
+    .le { padding: 1px 0; line-height: 1.55; }
+    .le .lt  { color: #334155; }
+    .le .lev { color: #60a5fa; font-weight: 700; }
+    .le .ld  { color: #475569; }
+    .le.out  .lev { color: #94a3b8; }
+    .le.ack  .lev { color: #34d399; }
+    .le.lerr .lev { color: #f87171; }
+    .le.sys  .lev { color: #f59e0b; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SCORM Sync — Page de test</h1>
+  <span id="global-status">Initialisation…</span>
+</header>
+
+<div class="panels">
+
+  <!-- ══ FORMATEUR ══════════════════════════════════════════════════════ -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="dot" id="dot-trainer"></div>
+      <h2>Formateur</h2>
+    </div>
+    <div class="panel-body">
+      <div class="section">
+        <div class="section-label">Créer une salle</div>
+        <div class="row">
+          <input type="text" id="moduleId" value="module-demo" placeholder="moduleId">
+          <input type="number" id="totalLearners" value="2" min="1" style="width:52px;flex:none">
+          <button class="bp" id="btn-create" onclick="trainerCreate()">Créer</button>
+        </div>
+      </div>
+
+      <div id="trainer-room" style="display:none">
+        <div class="room-code" id="room-code">—</div>
+        <div class="room-id"  id="room-id"></div>
+
+        <div class="section">
+          <div class="section-label">Vote</div>
+          <div class="row">
+            <button class="bg" onclick="trainerEmit('force_vote',{syncPoint:'q1'})">Forcer vote q1</button>
+            <button class="bs" onclick="trainerEmit('close_vote',{doubleVote:false})">Fermer vote</button>
+            <button class="bv" onclick="trainerEmit('close_vote',{doubleVote:true})">Fermer + débat</button>
+            <button class="bw" onclick="trainerEmit('open_second_vote',{})">2ème vote</button>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-label">Session</div>
+          <div class="row">
+            <button class="bw" onclick="trainerEmit('global_pause',{})">Pause</button>
+            <button class="bg" onclick="trainerEmit('global_resume',{})">Reprendre</button>
+            <button class="bs" onclick="trainerEmit('skip_sync',{syncPoint:'q1'})">Skip sync</button>
+            <button class="bp" onclick="trainerEmit('continue_all',{})">Continuer tous</button>
+          </div>
+        </div>
+        <div class="section">
+          <div class="section-label">État salle</div>
+          <div class="state-table">
+            <span class="sk">status</span>   <span class="sv" id="t-status">waiting</span>
+            <span class="sk">sas</span>       <span class="sv" id="t-waiting">—</span>
+            <span class="sk">syncPoint</span> <span class="sv" id="t-sync">—</span>
+            <span class="sk">progression</span><span class="sv" id="t-progress">—</span>
+          </div>
+          <div class="vote-bars" id="vote-bars">
+            <div class="vbar-col"><div class="vbar-track"><div class="vbar-fill" id="vf-A" style="height:0"></div></div><div class="vbar-label">A</div><div class="vbar-count" id="vc-A">0</div></div>
+            <div class="vbar-col"><div class="vbar-track"><div class="vbar-fill" id="vf-B" style="height:0"></div></div><div class="vbar-label">B</div><div class="vbar-count" id="vc-B">0</div></div>
+            <div class="vbar-col"><div class="vbar-track"><div class="vbar-fill" id="vf-C" style="height:0"></div></div><div class="vbar-label">C</div><div class="vbar-count" id="vc-C">0</div></div>
+            <div class="vbar-col"><div class="vbar-track"><div class="vbar-fill" id="vf-D" style="height:0"></div></div><div class="vbar-label">D</div><div class="vbar-count" id="vc-D">0</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-log" id="log-trainer"><div class="log-head">événements</div></div>
+  </div>
+
+  <!-- ══ APPRENANT 1 ════════════════════════════════════════════════════ -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="dot" id="dot-l1"></div>
+      <h2>Apprenant 1</h2>
+    </div>
+    <div class="panel-body">
+      <div class="section" id="l1-join-section">
+        <div class="section-label">Rejoindre</div>
+        <div class="row">
+          <input type="text" id="code-l1" placeholder="TIGRE-42">
+          <button class="bp" onclick="learnerJoin(1)">Rejoindre</button>
+        </div>
+      </div>
+      <div id="l1-controls" style="display:none">
+        <div class="section">
+          <button class="bg" style="width:100%" onclick="learnerArrive(1)">Arriver au sas &nbsp;(syncPoint: q1)</button>
+        </div>
+        <div class="section">
+          <div class="section-label">Voter</div>
+          <div class="row">
+            <button class="bp bvote" onclick="learnerVote(1,'A')">A</button>
+            <button class="bp bvote" onclick="learnerVote(1,'B')">B</button>
+            <button class="bp bvote" onclick="learnerVote(1,'C')">C</button>
+            <button class="bp bvote" onclick="learnerVote(1,'D')">D</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-log" id="log-l1"><div class="log-head">événements</div></div>
+  </div>
+
+  <!-- ══ APPRENANT 2 ════════════════════════════════════════════════════ -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="dot" id="dot-l2"></div>
+      <h2>Apprenant 2</h2>
+    </div>
+    <div class="panel-body">
+      <div class="section" id="l2-join-section">
+        <div class="section-label">Rejoindre</div>
+        <div class="row">
+          <input type="text" id="code-l2" placeholder="TIGRE-42">
+          <button class="bp" onclick="learnerJoin(2)">Rejoindre</button>
+        </div>
+      </div>
+      <div id="l2-controls" style="display:none">
+        <div class="section">
+          <button class="bg" style="width:100%" onclick="learnerArrive(2)">Arriver au sas &nbsp;(syncPoint: q1)</button>
+        </div>
+        <div class="section">
+          <div class="section-label">Voter</div>
+          <div class="row">
+            <button class="bp bvote" onclick="learnerVote(2,'A')">A</button>
+            <button class="bp bvote" onclick="learnerVote(2,'B')">B</button>
+            <button class="bp bvote" onclick="learnerVote(2,'C')">C</button>
+            <button class="bp bvote" onclick="learnerVote(2,'D')">D</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-log" id="log-l2"><div class="log-head">événements</div></div>
+  </div>
+
+</div><!-- .panels -->
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+// ── State ────────────────────────────────────────────────────────────────
+const trainer = { token: null, socket: null, roomId: null };
+const learner  = {
+  1: { baseToken: null, token: null, socket: null },
+  2: { baseToken: null, token: null, socket: null },
+};
+
+// ── Logging helpers ──────────────────────────────────────────────────────
+function ts() { return new Date().toTimeString().slice(0,8); }
+
+function addLog(target, event, data, cls = '') {
+  const el = document.getElementById('log-' + target);
+  if (!el) return;
+  const d = document.createElement('div');
+  d.className = 'le ' + cls;
+  const dataStr = (data !== undefined && data !== null) ? ' ' + JSON.stringify(data) : '';
+  d.innerHTML = `<span class="lt">${ts()}</span> <span class="lev">${event}</span><span class="ld">${dataStr}</span>`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setDot(id, state) {
+  const el = document.getElementById('dot-' + id);
+  if (el) el.className = 'dot ' + state;
+}
+
+// ── State display (trainer panel) ────────────────────────────────────────
+function setStatus(val) {
+  const el = document.getElementById('t-status');
+  el.textContent = val;
+  el.className = 'sv ' + val;
+}
+
+function setVoteBars(votes) {
+  if (!votes) return;
+  const max = Math.max(...Object.values(votes), 1);
+  ['A','B','C','D'].forEach(k => {
+    const v = votes[k] || 0;
+    const fill = document.getElementById('vf-' + k);
+    const cnt  = document.getElementById('vc-' + k);
+    if (fill) fill.style.height = Math.round((v / max) * 100) + '%';
+    if (cnt)  cnt.textContent = v;
+  });
+}
+
+function resetVoteBars() {
+  ['A','B','C','D'].forEach(k => {
+    const fill = document.getElementById('vf-' + k);
+    const cnt  = document.getElementById('vc-' + k);
+    if (fill) fill.style.height = '0';
+    if (cnt)  cnt.textContent = '0';
+  });
+  document.getElementById('t-progress').textContent = '—';
+}
+
+// ── HTTP helper ──────────────────────────────────────────────────────────
+async function post(path, token, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const r = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body) });
+  return r.json();
+}
+
+// ── Init — génère les JWT au chargement ──────────────────────────────────
+async function init() {
+  try {
+    const [t, l1, l2] = await Promise.all([
+      post('/api/auth/trainer-token', null, { trainerId: 'trainer-test', name: 'Formateur Test' }),
+      post('/api/auth/learner-token',  null, { learnerId: 'learner-1',   name: 'Apprenant 1' }),
+      post('/api/auth/learner-token',  null, { learnerId: 'learner-2',   name: 'Apprenant 2' }),
+    ]);
+    trainer.token         = t.token;
+    learner[1].baseToken  = l1.token;
+    learner[2].baseToken  = l2.token;
+    document.getElementById('global-status').textContent = 'Tokens JWT générés ✓ — Créez une salle pour commencer';
+    addLog('trainer', 'jwt-ok', { role: 'trainer' }, 'ack');
+    addLog('l1',      'jwt-ok', { role: 'learner', id: 'learner-1' }, 'ack');
+    addLog('l2',      'jwt-ok', { role: 'learner', id: 'learner-2' }, 'ack');
+  } catch(e) {
+    document.getElementById('global-status').textContent = '⚠ Serveur injoignable — lancez node src/server.js';
+    addLog('trainer', 'init-error', { error: e.message }, 'lerr');
+  }
+}
+
+// ── Trainer — créer la salle ─────────────────────────────────────────────
+async function trainerCreate() {
+  const moduleId      = document.getElementById('moduleId').value || 'module-demo';
+  const totalLearners = parseInt(document.getElementById('totalLearners').value) || 2;
+  try {
+    const res = await post('/api/rooms', trainer.token, { moduleId, totalLearners });
+    if (!res.roomId) { addLog('trainer', 'create-error', res, 'lerr'); return; }
+
+    trainer.roomId = res.roomId;
+    document.getElementById('room-code').textContent = res.code;
+    document.getElementById('room-id').textContent   = res.roomId;
+    document.getElementById('trainer-room').style.display = 'block';
+    document.getElementById('btn-create').disabled = true;
+    addLog('trainer', 'room-created', { roomId: res.roomId, code: res.code }, 'ack');
+
+    // Auto-fill code in learner panels
+    document.getElementById('code-l1').value = res.code;
+    document.getElementById('code-l2').value = res.code;
+
+    connectTrainer();
+  } catch(e) {
+    addLog('trainer', 'create-error', { error: e.message }, 'lerr');
+  }
+}
+
+// ── Trainer — socket ─────────────────────────────────────────────────────
+function connectTrainer() {
+  const s = io({ auth: { token: trainer.token } });
+  trainer.socket = s;
+
+  s.on('connect', () => {
+    setDot('trainer', 'ok');
+    addLog('trainer', 'connect', { id: s.id });
+    s.emit('join_room', { roomId: trainer.roomId });
+  });
+  s.on('disconnect',    ()  => { setDot('trainer', ''); addLog('trainer', 'disconnect', {}); });
+  s.on('connect_error', (e) => { setDot('trainer', 'err'); addLog('trainer', 'connect_error', { msg: e.message }, 'lerr'); });
+  s.on('room_joined',   (d) => { addLog('trainer', 'room_joined', d, 'ack'); setStatus('waiting'); });
+
+  s.on('waiting_update', (d) => {
+    addLog('trainer', 'waiting_update', d);
+    document.getElementById('t-waiting').textContent   = d.waiting + ' / ' + d.total;
+    document.getElementById('t-sync').textContent      = d.syncPoint || '—';
+  });
+  s.on('vote_open', (d) => {
+    addLog('trainer', 'vote_open', d);
+    setStatus('vote');
+    resetVoteBars();
+    document.getElementById('t-sync').textContent = d.syncPoint || '—';
+  });
+  s.on('vote_progress', (d) => {
+    addLog('trainer', 'vote_progress', d);
+    document.getElementById('t-progress').textContent = d.total + ' / ' + d.max + ' votes reçus';
+  });
+  s.on('vote_result', (d) => {
+    addLog('trainer', 'vote_result', d, 'ack');
+    setStatus('result');
+    setVoteBars(d.votes);
+    if (d.vote1Results) {
+      addLog('trainer', '  vote1Results', d.vote1Results);
+    }
+  });
+  s.on('debate_open', (d) => {
+    addLog('trainer', 'debate_open', d);
+    setStatus('debate');
+    setVoteBars(d.vote1Results);
+  });
+  s.on('global_pause',   () => { addLog('trainer', 'global_pause');  setStatus('paused'); });
+  s.on('global_resume',  () => { addLog('trainer', 'global_resume'); setStatus('content'); });
+  s.on('skip_sync',      () =>  addLog('trainer', 'skip_sync'));
+  s.on('continue_all',   () =>  addLog('trainer', 'continue_all'));
+  s.on('timer_extended', (d) => addLog('trainer', 'timer_extended', d));
+  s.on('error',          (d) => addLog('trainer', 'error', d, 'lerr'));
+}
+
+function trainerEmit(event, data) {
+  if (!trainer.socket) { addLog('trainer', 'not-connected', {}, 'lerr'); return; }
+  addLog('trainer', '→ ' + event, data, 'out');
+  trainer.socket.emit(event, data);
+}
+
+// ── Learners — rejoindre ─────────────────────────────────────────────────
+async function learnerJoin(n) {
+  const code = (document.getElementById('code-l' + n).value || '').toUpperCase().trim();
+  if (!code) { alert('Entrez un code de salle'); return; }
+  const logId = 'l' + n;
+  try {
+    const res = await post('/api/rooms/join', learner[n].baseToken, { code });
+    if (!res.token) { addLog(logId, 'join-error', res, 'lerr'); return; }
+    learner[n].token = res.token;
+    addLog(logId, 'join-ok', { roomId: res.roomId, code }, 'ack');
+    document.getElementById('l' + n + '-controls').style.display = 'block';
+    connectLearner(n);
+  } catch(e) {
+    addLog(logId, 'join-error', { error: e.message }, 'lerr');
+  }
+}
+
+// ── Learners — socket ────────────────────────────────────────────────────
+function connectLearner(n) {
+  const logId = 'l' + n;
+  const s = io({ auth: { token: learner[n].token } });
+  learner[n].socket = s;
+
+  s.on('connect', () => {
+    setDot('l' + n, 'ok');
+    addLog(logId, 'connect', { id: s.id });
+  });
+  s.on('disconnect',    ()  => { setDot('l' + n, ''); addLog(logId, 'disconnect', {}); });
+  s.on('connect_error', (e) => { setDot('l' + n, 'err'); addLog(logId, 'connect_error', { msg: e.message }, 'lerr'); });
+
+  s.on('waiting_update', (d) => addLog(logId, 'waiting_update', d));
+  s.on('vote_open',      (d) => addLog(logId, 'vote_open', d));
+  s.on('vote_progress',  (d) => addLog(logId, 'vote_progress', d));
+  s.on('vote_ack',       (d) => addLog(logId, 'vote_ack', d, d.ok ? 'ack' : 'lerr'));
+  s.on('vote_result',    (d) => addLog(logId, 'vote_result', d));
+  s.on('debate_open',    (d) => addLog(logId, 'debate_open', d));
+  s.on('global_pause',   () =>  addLog(logId, 'global_pause'));
+  s.on('global_resume',  () =>  addLog(logId, 'global_resume'));
+  s.on('skip_sync',      () =>  addLog(logId, 'skip_sync'));
+  s.on('continue_all',   () =>  addLog(logId, 'continue_all'));
+  s.on('timer_extended', (d) => addLog(logId, 'timer_extended', d));
+  s.on('error',          (d) => addLog(logId, 'error', d, 'lerr'));
+}
+
+function learnerArrive(n) {
+  const s = learner[n].socket;
+  if (!s || !s.connected) { addLog('l' + n, 'not-connected', {}, 'lerr'); return; }
+  const payload = { syncPoint: 'q1' };
+  addLog('l' + n, '→ learner_arrived', payload, 'out');
+  s.emit('learner_arrived', payload);
+}
+
+function learnerVote(n, value) {
+  const s = learner[n].socket;
+  if (!s || !s.connected) { addLog('l' + n, 'not-connected', {}, 'lerr'); return; }
+  addLog('l' + n, '→ submit_vote', { value }, 'out');
+  s.emit('submit_vote', { value });
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

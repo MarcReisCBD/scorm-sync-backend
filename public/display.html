@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Écran de diffusion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+/* ── Reset & base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #F8FAFC;
+  --card:     #FFFFFF;
+  --text:     #1E293B;
+  --text-sec: #64748B;
+  --primary:  #2563EB;
+  --success:  #16A34A;
+  --success-bg: #DCFCE7;
+  --danger:   #DC2626;
+  --border:   #E2E8F0;
+  --shadow:   0 4px 24px rgba(0,0,0,.08);
+  --rs:       16px;
+}
+
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: var(--bg);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  color: var(--text);
+}
+
+/* ── State panels ──────────────────────────────────────────────────────── */
+.state {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .35s ease;
+}
+.state.active { opacity: 1; pointer-events: auto; }
+
+/* ── Shared card ───────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border-radius: var(--rs);
+  box-shadow: var(--shadow);
+  padding: 40px 48px;
+}
+
+/* ── Progress bar shared ────────────────────────────────────────────────── */
+.prog-track {
+  width: 100%; height: 10px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.prog-fill {
+  height: 100%; border-radius: 99px;
+  background: var(--primary);
+  transition: width .4s ease;
+}
+.prog-fill.green { background: var(--success); }
+
+/* ════════════════════════════════════════════════════════════════════════ */
+/* STATE 1 — WELCOME                                                        */
+/* ════════════════════════════════════════════════════════════════════════ */
+#state-welcome { background: var(--bg); }
+#welcome-inner {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 28px; max-width: 540px; width: 100%; text-align: center;
+}
+#welcome-title { font-size: 40px; font-weight: 800; color: var(--text); }
+#welcome-sub   { font-size: 22px; color: var(--text-sec); font-weight: 500; }
+
+#welcome-qr-wrap {
+  background: white;
+  border-radius: var(--rs);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  display: inline-flex; flex-direction: column; align-items: center; gap: 12px;
+}
+#welcome-qr { width: 280px; height: 280px; }
+#welcome-url { font-size: 15px; color: var(--text-sec); word-break: break-all; max-width: 280px; }
+
+#welcome-code {
+  font-size: 56px; font-weight: 900; letter-spacing: .1em;
+  color: var(--primary); line-height: 1;
+}
+
+#welcome-pax {
+  width: 100%;
+  background: var(--card);
+  border-radius: var(--rs);
+  box-shadow: var(--shadow);
+  padding: 20px 28px;
+}
+#welcome-pax-label {
+  font-size: 22px; font-weight: 600; margin-bottom: 12px;
+  display: flex; align-items: center; gap: 10px;
+}
+#welcome-pax-count { color: var(--primary); }
+#welcome-pax-track { margin-top: 4px; }
+
+/* ════════════════════════════════════════════════════════════════════════ */
+/* STATE 2 — VOTE                                                           */
+/* ════════════════════════════════════════════════════════════════════════ */
+#state-vote { background: var(--bg); }
+#vote-inner {
+  width: min(960px, calc(100vw - 48px));
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+/* Header row */
+#vote-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+#vote-qnum {
+  font-size: 28px; font-weight: 700; color: var(--text-sec);
+}
+#vote-timer-box {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--card); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 10px 22px;
+}
+#vote-timer-val {
+  font-size: 36px; font-weight: 800;
+  color: var(--primary); min-width: 72px; text-align: right;
+  transition: color .3s;
+}
+#vote-timer-val.urgent { color: var(--danger); }
+#vote-timer-track {
+  width: 140px; height: 8px; background: var(--border);
+  border-radius: 99px; overflow: hidden;
+}
+#vote-timer-fill {
+  height: 100%; background: var(--primary);
+  border-radius: 99px;
+  transition: width 1s linear, background .3s;
+}
+#vote-timer-fill.urgent { background: var(--danger); }
+
+/* Question text */
+#vote-question {
+  background: var(--card); border-radius: var(--rs); box-shadow: var(--shadow);
+  padding: 28px 36px;
+  font-size: 30px; font-weight: 600; line-height: 1.45;
+}
+
+/* Choices list — single column, full width */
+#vote-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.vc-btn {
+  border-radius: 14px; box-shadow: var(--shadow);
+  padding: 18px 24px;
+  display: flex; align-items: center; gap: 16px;
+  border: 2px solid transparent;
+  width: 100%;
+  transition: background 0.4s ease;
+  /* background contrôlé uniquement via JS — pas de CSS statique */
+}
+.vc-key {
+  font-size: 24px; font-weight: 800;
+  min-width: 36px; line-height: 1; flex-shrink: 0;
+}
+.vc-text { font-size: 26px; font-weight: 500; line-height: 1.35; color: var(--text); }
+
+/* Vote progress */
+#vote-progress {
+  background: var(--card); border-radius: var(--rs); box-shadow: var(--shadow);
+  padding: 16px 24px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+#vote-prog-label {
+  font-size: 20px; font-weight: 600;
+  display: flex; justify-content: space-between; align-items: center;
+}
+#vote-prog-count { color: var(--primary); }
+#vote-all-done {
+  font-size: 20px; font-weight: 700; color: var(--success);
+  display: none;
+}
+
+/* ════════════════════════════════════════════════════════════════════════ */
+/* STATE 3 — RESULTS                                                        */
+/* ════════════════════════════════════════════════════════════════════════ */
+#state-result { background: var(--bg); }
+#result-inner {
+  width: min(800px, calc(100vw - 48px));
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+#result-header { font-size: 28px; font-weight: 700; color: var(--text-sec); }
+#result-question {
+  font-size: 28px; font-weight: 600; line-height: 1.4;
+  color: var(--text);
+}
+
+#result-bars {
+  background: var(--card); border-radius: var(--rs); box-shadow: var(--shadow);
+  padding: 24px 32px; display: flex; flex-direction: column; gap: 14px;
+}
+.rb-row {
+  display: grid;
+  grid-template-columns: 44px 1fr 64px 80px;
+  align-items: center; gap: 12px;
+}
+.rb-key {
+  width: 44px; height: 44px; border-radius: 10px;
+  background: var(--bg); border: 2px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: var(--text-sec);
+  flex-shrink: 0; transition: background .4s, border-color .4s, color .4s;
+}
+.rb-key.correct {
+  background: var(--success-bg); border-color: var(--success); color: var(--success);
+}
+.rb-track {
+  height: 28px; background: var(--bg); border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.rb-fill {
+  height: 100%; background: var(--primary); border-radius: 8px;
+  width: 0%; transition: width .7s cubic-bezier(.4,0,.2,1);
+}
+.rb-fill.correct { background: var(--success); }
+.rb-fill.faded   { background: #CBD5E1; }
+.rb-pct {
+  font-size: 22px; font-weight: 700; text-align: right; color: var(--text-sec);
+}
+.rb-cnt {
+  font-size: 16px; color: var(--text-sec); text-align: right;
+}
+.rb-text { display: none; /* shown inside track if long enough */ }
+
+#result-footer {
+  background: var(--success-bg);
+  border: 2px solid var(--success);
+  border-radius: var(--rs); padding: 16px 24px;
+  font-size: 24px; font-weight: 700; color: var(--success);
+  text-align: center;
+}
+#result-footer.no-correct { display: none; }
+
+/* ════════════════════════════════════════════════════════════════════════ */
+/* STATE 4 — BETWEEN                                                        */
+/* ════════════════════════════════════════════════════════════════════════ */
+#state-between { background: var(--bg); }
+#between-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 28px;
+  text-align: center; max-width: 500px;
+}
+#between-icon   { font-size: 72px; }
+#between-title  { font-size: 42px; font-weight: 800; color: var(--text); }
+.between-stat {
+  background: var(--card); border-radius: var(--rs); box-shadow: var(--shadow);
+  padding: 18px 32px; width: 100%;
+  font-size: 24px; font-weight: 600; color: var(--text-sec);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.between-stat-val { font-size: 32px; font-weight: 800; color: var(--primary); }
+
+/* ════════════════════════════════════════════════════════════════════════ */
+/* STATE 5 — END                                                            */
+/* ════════════════════════════════════════════════════════════════════════ */
+#state-end { background: var(--bg); }
+#end-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 24px;
+  text-align: center; max-width: 540px;
+}
+#end-icon  { font-size: 72px; }
+#end-title { font-size: 48px; font-weight: 900; color: var(--text); }
+#end-score-card {
+  background: var(--card); border-radius: var(--rs); box-shadow: var(--shadow);
+  padding: 24px 40px; width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+#end-score-label { font-size: 22px; color: var(--text-sec); font-weight: 500; }
+#end-score-val   { font-size: 64px; font-weight: 900; color: var(--primary); line-height: 1; }
+#end-score-track { width: 100%; }
+#end-details {
+  background: var(--card); border-radius: var(--rs); box-shadow: var(--shadow);
+  padding: 20px 32px; width: 100%;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.end-detail {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 20px; color: var(--text-sec);
+}
+.end-detail-val { font-weight: 700; color: var(--text); }
+#end-thanks {
+  font-size: 24px; color: var(--text-sec); font-weight: 500; margin-top: 8px;
+}
+
+/* ── Connection overlay ─────────────────────────────────────────────────── */
+#overlay-connecting {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 20px;
+  transition: opacity .4s;
+}
+#overlay-connecting.hidden { opacity: 0; pointer-events: none; }
+.spinner-lg {
+  width: 56px; height: 56px;
+  border: 5px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#overlay-conn-msg { font-size: 22px; color: var(--text-sec); font-weight: 500; }
+
+/* ── Pause overlay ──────────────────────────────────────────────────────── */
+#overlay-pause {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(248,250,252,.88);
+  display: none; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px;
+}
+#overlay-pause.show { display: flex; }
+#overlay-pause-icon  { font-size: 80px; }
+#overlay-pause-label { font-size: 36px; font-weight: 700; color: var(--text-sec); }
+</style>
+</head>
+<body>
+
+<!-- Connecting overlay -->
+<div id="overlay-connecting">
+  <div class="spinner-lg"></div>
+  <div id="overlay-conn-msg">Connexion à la salle…</div>
+</div>
+
+<!-- Pause overlay -->
+<div id="overlay-pause">
+  <div id="overlay-pause-icon">⏸</div>
+  <div id="overlay-pause-label">Session en pause</div>
+</div>
+
+<!-- ══ STATE 1 — WELCOME ══════════════════════════════════════════════════ -->
+<div id="state-welcome" class="state">
+  <div id="welcome-inner">
+    <div id="welcome-title">Session collaborative</div>
+    <div id="welcome-qr-wrap">
+      <div id="welcome-qr"></div>
+      <div id="welcome-url"></div>
+    </div>
+    <div id="welcome-code">—</div>
+    <div id="welcome-pax">
+      <div id="welcome-pax-label">
+        <span>Participants connectés</span>
+        <span id="welcome-pax-count">0 / —</span>
+      </div>
+      <div id="welcome-pax-track" class="prog-track">
+        <div id="welcome-pax-fill" class="prog-fill" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STATE 2 — VOTE ═════════════════════════════════════════════════════ -->
+<div id="state-vote" class="state">
+  <div id="vote-inner">
+    <div id="vote-header">
+      <div id="vote-qnum">Question —</div>
+      <div id="vote-timer-box">
+        <div id="vote-timer-track">
+          <div id="vote-timer-fill" style="width:100%"></div>
+        </div>
+        <div id="vote-timer-val">—s</div>
+      </div>
+    </div>
+    <div id="vote-question"></div>
+    <div id="vote-choices"></div>
+    <div id="vote-progress">
+      <div id="vote-prog-label">
+        <span>Votes reçus</span>
+        <span id="vote-prog-count">0 / —</span>
+      </div>
+      <div class="prog-track">
+        <div id="vote-prog-fill" class="prog-fill" style="width:0%"></div>
+      </div>
+      <div id="vote-all-done">Tout le monde a répondu !</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STATE 3 — RESULTS ══════════════════════════════════════════════════ -->
+<div id="state-result" class="state">
+  <div id="result-inner">
+    <div id="result-header">Résultats — Question —</div>
+    <div id="result-question"></div>
+    <div id="result-bars"></div>
+    <div id="result-footer"></div>
+  </div>
+</div>
+
+<!-- ══ STATE 4 — BETWEEN ══════════════════════════════════════════════════ -->
+<div id="state-between" class="state">
+  <div id="between-inner">
+    <div id="between-icon">⏳</div>
+    <div id="between-title">Prochaine question…</div>
+    <div class="between-stat">
+      <span>Score moyen</span>
+      <span class="between-stat-val" id="between-score">—</span>
+    </div>
+    <div class="between-stat">
+      <span>Questions répondues</span>
+      <span class="between-stat-val" id="between-qcount">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ STATE 5 — END ══════════════════════════════════════════════════════ -->
+<div id="state-end" class="state">
+  <div id="end-inner">
+    <div id="end-icon">🎉</div>
+    <div id="end-title">Session terminée !</div>
+    <div id="end-score-card">
+      <div id="end-score-label">Score moyen du groupe</div>
+      <div id="end-score-val">—</div>
+      <div id="end-score-track" class="prog-track">
+        <div id="end-score-fill" class="prog-fill green" style="width:0%"></div>
+      </div>
+    </div>
+    <div id="end-details">
+      <div class="end-detail">
+        <span>Question la plus réussie</span>
+        <span class="end-detail-val" id="end-best">—</span>
+      </div>
+      <div class="end-detail">
+        <span>Question la plus difficile</span>
+        <span class="end-detail-val" id="end-hard">—</span>
+      </div>
+    </div>
+    <div id="end-thanks">Merci pour votre participation</div>
+  </div>
+</div>
+
+<!-- Socket.io client bundled by server -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+'use strict';
+
+/* ── Globals ──────────────────────────────────────────────────────────── */
+var roomCode = '';
+var roomId   = '';
+var socket   = null;
+var totalLearners = 0;
+var connectedCount = 0;
+
+var timerInterval = null;
+var timerLeft     = 0;
+var timerTotal    = 1;
+
+var CHOICE_COLORS = {
+  A: '#3B82F6',
+  B: '#22C55E',
+  C: '#F97316',
+  D: '#A855F7',
+  E: '#EF4444',
+  F: '#EAB308',
+};
+
+var currentVoteCounts = {};   // { A: 2, B: 5, … } — mise à jour en temps réel
+var currentChoiceKeys = [];   // ordre des lettres du vote en cours
+var votersCount       = 0;    // nb de votants réels (1 par vote_progress, indép. du nb de lettres)
+
+// Analytics tracking
+var sessionStats = {
+  questionsAnswered: 0,
+  totalVotes:        0,
+  totalCorrect:      0,
+  perQuestion: {}  // syncPoint → { votes:{}, correctAnswer, totalVotes, correctVotes }
+};
+var currentSyncPoint = null;
+var currentQuestionData = null;
+var seenSyncPoints = [];
+
+/* ── State management ─────────────────────────────────────────────────── */
+var currentState = null;
+
+function showState(name) {
+  if (currentState) {
+    document.getElementById('state-' + currentState).classList.remove('active');
+  }
+  currentState = name;
+  document.getElementById('state-' + name).classList.add('active');
+}
+
+/* ── Init ─────────────────────────────────────────────────────────────── */
+(function init() {
+  var params = new URLSearchParams(window.location.search);
+  roomCode = params.get('room') || '';
+  if (!roomCode) {
+    setConnMsg('Paramètre ?room=CODE manquant dans l\'URL');
+    return;
+  }
+
+  // Load QR code lib then connect
+  var script = document.createElement('script');
+  script.src = '/sdk/qrcode.min.js';
+  script.onload = function() { fetchDisplayToken(); };
+  script.onerror = function() { fetchDisplayToken(); }; // continue without QR
+  document.head.appendChild(script);
+})();
+
+function fetchDisplayToken() {
+  setConnMsg('Résolution de la salle ' + roomCode + '…');
+  fetch('/api/auth/display-token?room=' + encodeURIComponent(roomCode))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.token) {
+        setConnMsg('Salle introuvable : ' + roomCode);
+        return;
+      }
+      roomId = data.roomId;
+      setupVoteUrl();
+      connectSocket(data.token);
+    })
+    .catch(function(err) {
+      setConnMsg('Erreur de connexion : ' + err.message);
+    });
+}
+
+function setupVoteUrl() {
+  var base = window.location.origin;
+  var url  = base + '/vote?room=' + roomCode;
+  document.getElementById('welcome-url').textContent = url;
+  document.getElementById('welcome-code').textContent = roomCode;
+  if (typeof QRCode !== 'undefined') {
+    try {
+      new QRCode(document.getElementById('welcome-qr'), {
+        text: url, width: 280, height: 280,
+        colorDark: '#1E293B', colorLight: '#FFFFFF',
+      });
+    } catch(e) {}
+  }
+  showState('welcome');
+  hideConnOverlay();
+}
+
+function connectSocket(token) {
+  socket = io({ auth: { token: token } });
+
+  socket.on('connect', function() {
+    setConnMsg('Connecté');
+  });
+
+  socket.on('connect_error', function(err) {
+    setConnMsg('Erreur Socket.io : ' + err.message);
+  });
+
+  socket.on('disconnect', function() {
+    setConnMsg('Reconnexion…');
+    document.getElementById('overlay-connecting').classList.remove('hidden');
+  });
+
+  socket.on('reconnect', function() {
+    hideConnOverlay();
+  });
+
+  // ── Room events ────────────────────────────────────────────────────────
+
+  socket.on('waiting_update', function(d) {
+    var waiting = d.waiting || 0;
+    var total   = d.total   || 0;
+    if (total > 0) totalLearners = total;
+    connectedCount = waiting;
+    updatePaxCounter(waiting, total);
+  });
+
+  socket.on('question_data', function(d) {
+    currentQuestionData = d;
+    currentSyncPoint    = d.syncPoint;
+    if (seenSyncPoints.indexOf(d.syncPoint) === -1) {
+      seenSyncPoints.push(d.syncPoint);
+    }
+  });
+
+  socket.on('vote_open', function(d) {
+    var qd = d.questionData || currentQuestionData || {};
+    currentSyncPoint = d.syncPoint || (qd && qd.syncPoint) || currentSyncPoint;
+
+    if (currentSyncPoint && seenSyncPoints.indexOf(currentSyncPoint) === -1) {
+      seenSyncPoints.push(currentSyncPoint);
+    }
+    if (qd) currentQuestionData = qd;
+
+    buildVoteState(d, qd);
+    showState('vote');
+    startTimer(d.timerSeconds || 45);
+  });
+
+  socket.on('vote_progress', function(d) {
+    var max = d.max || totalLearners || 1;
+    votersCount++;  // 1 par votant, indépendamment du nb de lettres (multi-correct)
+    updateVoteProgress(votersCount, max);
+
+    // Incrémenter les compteurs de lettres et recalculer les gradients
+    var value = d.value;
+    if (value) {
+      var vals = Array.isArray(value) ? value : [value];
+      vals.forEach(function(v) {
+        if (currentVoteCounts.hasOwnProperty(v)) {
+          currentVoteCounts[v] = (currentVoteCounts[v] || 0) + 1;
+        }
+      });
+      updateChoiceGradients();
+    }
+  });
+
+  socket.on('timer_extended', function(d) {
+    timerLeft += (d.extraSeconds || 0);
+    timerTotal += (d.extraSeconds || 0);
+  });
+
+  socket.on('vote_result', function(d) {
+    var qd = currentQuestionData || {};
+    recordResult(d);
+    buildResultState(d, qd);
+    showState('result');
+    clearTimerInterval();
+
+    // Animate bars after a brief delay
+    setTimeout(function() { animateBars(d.votes, d.correctAnswer); }, 120);
+  });
+
+  socket.on('continue_all', function(d) {
+    var isLast = d && d.isLastQuestion;
+    if (isLast) {
+      buildEndState();
+      showState('end');
+    } else {
+      updateBetweenStats();
+      showState('between');
+    }
+    clearTimerInterval();
+  });
+
+  socket.on('session_complete', function(d) {
+    buildEndState(d);
+    showState('end');
+    clearTimerInterval();
+  });
+
+  socket.on('global_pause', function() {
+    document.getElementById('overlay-pause').classList.add('show');
+  });
+
+  socket.on('global_resume', function() {
+    document.getElementById('overlay-pause').classList.remove('show');
+  });
+
+  socket.on('debate_open', function() {
+    // Stay on result state during debate
+  });
+}
+
+/* ── Overlay helpers ──────────────────────────────────────────────────── */
+function setConnMsg(msg) {
+  document.getElementById('overlay-conn-msg').textContent = msg;
+}
+function hideConnOverlay() {
+  document.getElementById('overlay-connecting').classList.add('hidden');
+}
+
+/* ── Participant counter ──────────────────────────────────────────────── */
+function updatePaxCounter(n, total) {
+  document.getElementById('welcome-pax-count').textContent = n + ' / ' + (total || '—');
+  var pct = total > 0 ? Math.round(n / total * 100) : 0;
+  document.getElementById('welcome-pax-fill').style.width = pct + '%';
+}
+
+/* ── Timer ────────────────────────────────────────────────────────────── */
+function startTimer(seconds) {
+  clearTimerInterval();
+  timerLeft  = seconds;
+  timerTotal = seconds;
+  renderTimer();
+  timerInterval = setInterval(function() {
+    timerLeft = Math.max(0, timerLeft - 1);
+    renderTimer();
+    if (timerLeft <= 0) clearTimerInterval();
+  }, 1000);
+}
+
+function clearTimerInterval() {
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+}
+
+function renderTimer() {
+  var pct     = timerTotal > 0 ? (timerLeft / timerTotal * 100) : 0;
+  var urgent  = timerLeft <= 10;
+  var valEl   = document.getElementById('vote-timer-val');
+  var fillEl  = document.getElementById('vote-timer-fill');
+  valEl.textContent = timerLeft + 's';
+  valEl.className   = urgent ? 'urgent' : '';
+  fillEl.style.width = pct + '%';
+  fillEl.className  = urgent ? 'urgent' : '';
+}
+
+/* ── Build vote state ─────────────────────────────────────────────────── */
+function buildVoteState(d, qd) {
+  var sp   = d.syncPoint || (qd && qd.syncPoint) || '';
+  var qNum = spToNum(sp);
+  document.getElementById('vote-qnum').textContent = 'Question ' + (qNum || '—');
+  document.getElementById('vote-question').textContent = decodeHtml((qd && qd.question) || '');
+
+  // Choices — colonne unique, initialisée avec gradient vide
+  var choices = (qd && qd.choices) || {};
+  var keys    = Object.keys(choices);
+  currentChoiceKeys  = keys;
+  currentVoteCounts  = {};
+  votersCount        = 0;
+  keys.forEach(function(k) { currentVoteCounts[k] = 0; });
+
+  var col = document.getElementById('vote-choices');
+  col.innerHTML = '';
+
+  keys.forEach(function(k) {
+    var btn = document.createElement('div');
+    btn.className = 'vc-btn';
+    btn.setAttribute('data-choice', k);
+    btn.style.background = '#FFFFFF';  // fond initial — JS seul contrôle le background
+    var color = CHOICE_COLORS[k] || '#94A3B8';
+    btn.innerHTML =
+      '<div class="vc-key" style="color:' + color + '">' + k + '</div>' +
+      '<div class="vc-text"></div>';
+    btn.querySelector('.vc-text').textContent = decodeHtml(choices[k] || k);
+    col.appendChild(btn);
+  });
+
+  // Reset progress
+  updateVoteProgress(0, totalLearners || d.total || 0);
+  document.getElementById('vote-all-done').style.display = 'none';
+}
+
+/* ── Build result state ───────────────────────────────────────────────── */
+function buildResultState(d, qd) {
+  var sp   = d.syncPoint || (qd && qd.syncPoint) || currentSyncPoint || '';
+  var qNum = spToNum(sp);
+  document.getElementById('result-header').textContent = 'Résultats — Question ' + (qNum || '—');
+  document.getElementById('result-question').textContent = decodeHtml((qd && qd.question) || '');
+
+  var votes   = d.votes || {};
+  var correct = d.correctAnswer || (qd && qd.correct) || null;
+  var total   = Object.values(votes).reduce(function(s, n) { return s + n; }, 0) || 1;
+
+  var keys = Object.keys(votes);
+  var choices = (qd && qd.choices) || {};
+
+  var bars = document.getElementById('result-bars');
+  bars.innerHTML = '';
+
+  keys.forEach(function(k) {
+    var n    = votes[k] || 0;
+    var pct  = Math.round(n / total * 100);
+    var isCorrect = Array.isArray(correct)
+      ? correct.indexOf(k) !== -1
+      : correct === k;
+
+    var row = document.createElement('div');
+    row.className = 'rb-row';
+    row.setAttribute('data-key', k);
+
+    row.innerHTML =
+      '<div class="rb-key' + (isCorrect ? ' correct' : '') + '">' + k + '</div>' +
+      '<div class="rb-track"><div class="rb-fill' +
+        (isCorrect ? ' correct' : (n === 0 ? ' faded' : '')) +
+        '" data-pct="' + pct + '" style="width:0%"></div></div>' +
+      '<div class="rb-pct">' + pct + '%</div>' +
+      '<div class="rb-cnt">' + n + ' vote' + (n !== 1 ? 's' : '') + '</div>';
+
+    // Choice text overlaid if available
+    if (choices[k]) {
+      var textEl = document.createElement('div');
+      textEl.style.cssText = 'font-size:15px;color:#64748B;grid-column:2;margin-top:-6px';
+      textEl.textContent = decodeHtml(choices[k]);
+      row.after(textEl); // appended after row — simpler than modifying grid
+    }
+
+    bars.appendChild(row);
+
+    if (choices[k]) {
+      var textRow = document.createElement('div');
+      textRow.style.cssText = 'font-size:15px;color:#64748B;padding:0 0 6px 56px;line-height:1.3;';
+      textRow.textContent = decodeHtml(choices[k]);
+      bars.appendChild(textRow);
+    }
+  });
+
+  // Footer
+  var footer = document.getElementById('result-footer');
+  if (correct) {
+    var correctKeys = Array.isArray(correct) ? correct : [correct];
+    var correctTexts = correctKeys.map(function(k) {
+      return k + (choices[k] ? ' — ' + decodeHtml(choices[k]) : '');
+    });
+    var correctCount = correctKeys.reduce(function(s, k) { return s + (votes[k] || 0); }, 0);
+    var pctCorrect   = Math.round(correctCount / total * 100);
+    footer.textContent = '✅ Bonne réponse : ' + correctTexts.join(', ') + '    ·    ' + pctCorrect + '% de bonnes réponses';
+    footer.className = 'result-footer';
+  } else {
+    footer.className = 'result-footer no-correct';
+  }
+}
+
+function animateBars(votes, correct) {
+  var total = Object.values(votes || {}).reduce(function(s, n) { return s + n; }, 0) || 1;
+  document.querySelectorAll('#result-bars .rb-fill').forEach(function(fill) {
+    var row = fill.closest('.rb-row');
+    var k   = row && row.getAttribute('data-key');
+    if (!k) return;
+    var pct = Math.round((votes[k] || 0) / total * 100);
+    fill.style.width = pct + '%';
+  });
+}
+
+/* ── Update vote progress ─────────────────────────────────────────────── */
+function updateVoteProgress(n, max) {
+  var pct = max > 0 ? Math.round(n / max * 100) : 0;
+  document.getElementById('vote-prog-count').textContent = n + ' / ' + (max || '—');
+  document.getElementById('vote-prog-fill').style.width = pct + '%';
+  if (max > 0 && n >= max) {
+    document.getElementById('vote-all-done').style.display = 'block';
+  }
+}
+
+/* ── Record result for analytics ──────────────────────────────────────── */
+function recordResult(d) {
+  var sp = d.syncPoint || currentSyncPoint;
+  if (!sp) return;
+  var votes   = d.votes || {};
+  var correct = d.correctAnswer;
+  var total   = Object.values(votes).reduce(function(s, n) { return s + n; }, 0);
+  var correctVotes = 0;
+  if (correct) {
+    var cArr = Array.isArray(correct) ? correct : [correct];
+    cArr.forEach(function(k) { correctVotes += (votes[k] || 0); });
+  }
+  sessionStats.perQuestion[sp] = {
+    votes: votes, correctAnswer: correct,
+    totalVotes: total, correctVotes: correctVotes,
+  };
+  sessionStats.questionsAnswered++;
+  sessionStats.totalVotes   += total;
+  sessionStats.totalCorrect += correctVotes;
+}
+
+/* ── Build between state ──────────────────────────────────────────────── */
+function updateBetweenStats() {
+  var answered = sessionStats.questionsAnswered;
+  var avgScore = sessionStats.totalVotes > 0
+    ? Math.round(sessionStats.totalCorrect / sessionStats.totalVotes * 100)
+    : null;
+  document.getElementById('between-score').textContent = avgScore !== null ? avgScore + '%' : '—';
+  document.getElementById('between-qcount').textContent = answered > 0 ? answered + ' répondues' : '—';
+}
+
+/* ── Build end state ──────────────────────────────────────────────────── */
+function buildEndState(sessionData) {
+  var avgScore = null;
+  if (sessionStats.totalVotes > 0) {
+    avgScore = Math.round(sessionStats.totalCorrect / sessionStats.totalVotes * 100);
+  }
+
+  document.getElementById('end-score-val').textContent = avgScore !== null ? avgScore + '%' : '—';
+  document.getElementById('end-score-fill').style.width = (avgScore || 0) + '%';
+
+  // Best / hardest question
+  var perQ   = sessionStats.perQuestion;
+  var spKeys = Object.keys(perQ);
+  if (spKeys.length > 0) {
+    var best = spKeys.reduce(function(a, b) {
+      return pctFor(perQ, a) >= pctFor(perQ, b) ? a : b;
+    });
+    var hard = spKeys.reduce(function(a, b) {
+      return pctFor(perQ, a) <= pctFor(perQ, b) ? a : b;
+    });
+    document.getElementById('end-best').textContent =
+      spToLabel(best) + ' (' + pctFor(perQ, best) + '%)';
+    document.getElementById('end-hard').textContent =
+      spToLabel(hard) + ' (' + pctFor(perQ, hard) + '%)';
+  }
+}
+
+function pctFor(perQ, sp) {
+  var q = perQ[sp];
+  if (!q || q.totalVotes === 0) return 0;
+  return Math.round(q.correctVotes / q.totalVotes * 100);
+}
+
+/* ── Utilities ────────────────────────────────────────────────────────── */
+function spToNum(sp) {
+  if (!sp) return null;
+  var m = sp.match(/(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+function spToLabel(sp) {
+  var n = spToNum(sp);
+  return n ? 'Q' + n : (sp || '?');
+}
+
+/* ── Choice gradient fill (vote en temps réel) ─────────────────────────── */
+function updateChoiceGradients() {
+  // Dénominateur = participants totaux dans la salle (pas seulement les votants)
+  var denom = totalLearners || votersCount || 1;
+  currentChoiceKeys.forEach(function(k) {
+    var btn = document.querySelector('#vote-choices [data-choice="' + k + '"]');
+    if (!btn) return;
+    var n   = currentVoteCounts[k] || 0;
+    var pct = Math.round(n / denom * 100);
+    var rgb = hexToRgb(CHOICE_COLORS[k] || '#94A3B8');
+    if (pct > 0) {
+      btn.style.background =
+        'linear-gradient(to right, rgba(' + rgb + ',0.18) ' + pct + '%, #FFFFFF ' + pct + '%)';
+    } else {
+      btn.style.background = '#FFFFFF';
+    }
+  });
+}
+
+function hexToRgb(hex) {
+  var r = parseInt(hex.slice(1, 3), 16);
+  var g = parseInt(hex.slice(3, 5), 16);
+  var b = parseInt(hex.slice(5, 7), 16);
+  return r + ',' + g + ',' + b;
+}
+
+function decodeHtml(text) {
+  if (!text) return text || '';
+  var txt = document.createElement('textarea');
+  txt.innerHTML = text;
+  return txt.value;
+}
+</script>
+</body>
+</html>

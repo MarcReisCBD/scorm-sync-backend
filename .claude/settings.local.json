@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 5 node src/server.js)",
+      "Bash(node src/server.js)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(curl -sL https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz -o /tmp/ngrok.tgz)",
+      "Bash(tar -xzf /tmp/ngrok.tgz -C /tmp/)",
+      "Bash(mkdir -p ~/bin)",
+      "Bash(mv /tmp/ngrok ~/bin/ngrok)",
+      "Bash(chmod +x ~/bin/ngrok)",
+      "Bash(bash /home/marc/scorm-sync-backend/package.sh)",
+      "Bash(unzip -l /home/marc/scorm-sync-backend/scorm-test.zip)",
+      "Bash(curl -sL https://cdn.socket.io/4.7.2/socket.io.min.js -o /home/marc/scorm-sync-backend/scorm-test/socket.io.min.js)",
+      "Bash(bash package.sh)",
+      "Bash(unzip -l scorm-test.zip)",
+      "Bash(curl -s http://localhost:3000/sdk/scorm-sync-sdk.js)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/register-token -H 'Content-Type: application/json' -d '{\"token\":\"TEST99\",\"studentId\":\"marc@test.com\",\"studentName\":\"Marc Reis\",\"roomCode\":\"TIGRE-42\"}')",
+      "Bash(curl -s \"http://localhost:3000/api/auth/resolve-token?token=TEST99\")",
+      "Bash(curl -s \"http://localhost:3000/api/auth/resolve-token?token=XXXXXXXX\")",
+      "Bash(kill %1)",
+      "Bash(curl -s http://localhost:3000/api/modules)",
+      "Bash(curl -s \"http://localhost:3000/api/questions?limit=5\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/questions/random -H 'Content-Type: application/json' -d '{\"moduleRefs\":[\"P3M4\"],\"count\":2,\"language\":\"fr\"}')",
+      "Bash(curl -s \"http://localhost:3000/api/questions?lang=en&limit=3\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/trainer-token -H 'Content-Type: application/json' -d '{\"trainerId\":\"t1\"}')",
+      "Bash(curl -s \"http://localhost:3000/api/questions?lang=fr\")"
+    ]
+  }
+}

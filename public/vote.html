@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Voter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --a: #3b82f6; --b: #22c55e; --c: #f97316; --d: #8b5cf6; --e: #a78bfa; --f: #fb923c;
+      --bg: #0f172a; --surface: #1e293b; --border: #334155;
+      --text: #f1f5f9; --muted: #64748b;
+    }
+    html, body { height: 100%; height: 100dvh; overflow: hidden; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--text);
+      display: flex; flex-direction: column;
+    }
+    header {
+      padding: 10px 16px 8px;
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .room-code { font-size: 18px; font-weight: 800; letter-spacing: .08em; color: #38bdf8; }
+    #conn-status { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    #conn-status.ok  { color: #4ade80; }
+    #conn-status.err { color: #f87171; }
+
+    /* Timer bar — visible only during vote */
+    #timer-track { height: 5px; background: var(--border); flex-shrink: 0; display: none; }
+    #timer-fill-bar { height: 100%; background: #38bdf8; width: 100%; transition: width 1s linear, background .3s; }
+    #timer-fill-bar.urgent { background: #f87171; }
+
+    main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    .state { display: none; flex: 1; flex-direction: column; }
+    .state.active { display: flex; }
+
+    /* Loading */
+    #state-loading { align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+
+    /* Waiting */
+    #state-waiting { align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; }
+    .greet-hello { font-size: 14px; color: var(--muted); }
+    .greet-name  { font-size: 26px; font-weight: 800; color: var(--text); margin-bottom: 6px; }
+    #wait-msg    { font-size: 14px; color: var(--muted); margin-top: 4px; }
+
+    /* Spinner shared */
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border); border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Vote — single-column full-width buttons */
+    #state-vote { padding: 10px 12px 12px; gap: 8px; padding-bottom: 80px; }
+    .vote-row-meta {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2px; flex-shrink: 0;
+    }
+    .vote-meta-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    #vote-timer-text { font-size: 20px; font-weight: 900; font-family: monospace; color: var(--text); }
+    #vote-question-text {
+      font-size: 18px; font-weight: 700; color: var(--text);
+      background: #1e3a5f; border-left: 3px solid #38bdf8;
+      border-radius: 10px; padding: 12px 14px;
+      flex-shrink: 0; display: none; line-height: 1.45;
+    }
+    #vote-waiting-msg {
+      display: none; text-align: center; padding: 8px 4px;
+      font-size: 13px; color: var(--muted); flex-shrink: 0;
+    }
+    .vote-col { display: flex; flex-direction: column; flex: 1; gap: 10px; }
+    /* Base button — neutral dark */
+    .vcol-btn {
+      flex: 1; border: 1.5px solid #334155; border-radius: 14px;
+      background: #1e293b; color: #e2e8f0;
+      cursor: pointer;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      padding: 10px 14px 10px 40px;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform .08s, background .15s, border-color .15s, box-shadow .15s;
+      min-height: 64px; text-align: center;
+    }
+    .vcol-btn:active:not(:disabled) { transform: scale(.97); }
+    .vcol-btn:disabled { opacity: .45; cursor: not-allowed; }
+    /* Selected state (before validation) */
+    .vcol-btn.choice-selected {
+      background: rgba(59,130,246,.18);
+      border: 2px solid #3b82f6;
+      color: #bfdbfe;
+      box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+    }
+    .vcol-btn.choice-selected .vcol-text::before {
+      content: '\25CF  ';
+      color: #60a5fa;
+      font-size: 14px;
+    }
+    /* Post-result feedback on selected button */
+    .vcol-btn.voted-correct {
+      background: rgba(74,222,128,.18);
+      border: 2px solid #4ade80;
+      color: #bbf7d0;
+    }
+    .vcol-btn.voted-wrong {
+      background: rgba(248,113,113,.15);
+      border: 2px solid #f87171;
+      color: #fecaca;
+    }
+    /* Key letter (A/B/C/D) — colored per option */
+    .vcol-key {
+      position: absolute; top: 8px; left: 12px;
+      font-size: 13px; font-weight: 900; line-height: 1;
+    }
+    .vcol-btn-a .vcol-key { color: var(--a); }
+    .vcol-btn-b .vcol-key { color: var(--b); }
+    .vcol-btn-c .vcol-key { color: var(--c); }
+    .vcol-btn-d .vcol-key { color: var(--d); }
+    .vcol-text {
+      font-size: 17px; font-weight: 600;
+      text-align: center; line-height: 1.3;
+    }
+    /* Validate button — fixed bottom */
+    #validate-btn {
+      display: none;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      padding: 18px 24px;
+      background: #16a34a; color: #fff;
+      font-size: 18px; font-weight: 800; letter-spacing: .02em;
+      border: none; cursor: pointer;
+      animation: slideUp .2s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+    /* Voted */
+    #state-voted { align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+    .voted-check { font-size: 80px; line-height: 1; }
+    .voted-label { font-size: 20px; font-weight: 800; color: #4ade80; }
+    .voted-sub   { font-size: 13px; color: var(--muted); }
+
+    /* Result */
+    #state-result { padding: 20px 16px; gap: 12px; overflow-y: auto; }
+    .result-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .result-next  { font-size: 13px; color: var(--muted); text-align: center; margin-top: 4px; }
+    .res-row { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 12px; background: var(--surface); }
+    .res-row.correct-row { background: rgba(74,222,128,.12); border: 1px solid rgba(74,222,128,.45); }
+    .res-key  { font-size: 15px; font-weight: 800; min-width: 18px; }
+    .res-track{ flex: 1; height: 12px; background: var(--border); border-radius: 6px; overflow: hidden; }
+    .res-fill { height: 100%; width: 0; border-radius: 6px; transition: width .5s ease; }
+    .res-pct  { font-size: 12px; font-weight: 700; min-width: 36px; text-align: right; color: var(--muted); }
+    .rf-a { background: var(--a); } .rf-b { background: var(--b); }
+    .rf-c { background: var(--c); } .rf-d { background: var(--d); }
+    .rf-e { background: #a78bfa; } .rf-f { background: #fb923c; }
+    .vcol-btn-e .vcol-key { color: #a78bfa; }
+    .vcol-btn-f .vcol-key { color: #fb923c; }
+    #multiple-choice-hint { display:none; text-align:center; font-size:13px; color:#60a5fa; padding:4px 0; flex-shrink:0; }
+
+    /* Paused */
+    #state-paused { align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+    .pause-icon  { font-size: 64px; line-height: 1; }
+    .pause-label { font-size: 18px; font-weight: 800; color: #fbbf24; }
+    .pause-sub   { font-size: 13px; color: var(--muted); }
+
+    /* Error */
+    #state-error { align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
+    .error-icon  { font-size: 52px; line-height: 1; }
+    .error-label { font-size: 16px; font-weight: 700; color: #f87171; }
+    .error-sub   { font-size: 13px; color: var(--muted); max-width: 280px; }
+    .retry-btn { padding: 12px 28px; border: none; border-radius: 10px; background: #3b82f6; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+
+    /* Disconnected / reconnecting */
+    #state-disconnected { align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center; }
+    .disc-label { font-size: 14px; color: var(--muted); }
+
+    /* End screen */
+    #state-end { align-items: center; justify-content: center; gap: 14px; padding: 32px 24px; text-align: center; }
+    .end-trophy { font-size: 56px; line-height: 1; }
+    .end-score  { font-size: 76px; font-weight: 900; line-height: 1; }
+    .end-score.pass { color: #4ade80; }
+    .end-score.fail { color: #f87171; }
+    .end-detail { font-size: 15px; color: var(--muted); }
+    .end-status { font-size: 18px; font-weight: 800; padding: 6px 18px; border-radius: 20px; margin-top: 2px; }
+    .end-status.pass { background: rgba(74,222,128,.15); color: #4ade80; }
+    .end-status.fail { background: rgba(248,113,113,.15); color: #f87171; }
+    .end-thanks { font-size: 13px; color: var(--muted); margin-top: 12px; max-width: 260px; line-height: 1.5; }
+
+    /* Debug panel */
+    #dbg-toggle { position: fixed; bottom: 8px; right: 8px; z-index: 200; background: #334155; color: #94a3b8; border: none; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+    #dbg-panel { display: none; position: fixed; bottom: 34px; left: 0; right: 0; max-height: 40vh; overflow-y: auto; background: rgba(15,23,42,.95); border-top: 1px solid #334155; padding: 6px 10px; z-index: 199; }
+    #dbg-panel.open { display: block; }
+    .dbg-line { font-size: 10px; font-family: monospace; color: #94a3b8; border-bottom: 1px solid #1e293b; padding: 2px 0; }
+    .dbg-line.err { color: #f87171; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="room-code" id="room-display">—</div>
+  <div id="conn-status">Connexion…</div>
+</header>
+<div id="timer-track"><div id="timer-fill-bar"></div></div>
+
+<main>
+  <div class="state active" id="state-loading">
+    <div class="spinner"></div>
+    <div id="loading-msg">Identification…</div>
+  </div>
+
+  <div class="state" id="state-waiting">
+    <div class="greet-hello">Bonjour,</div>
+    <div class="greet-name" id="greet-name">—</div>
+    <div class="spinner"></div>
+    <div id="wait-msg">En attente d'un vote…</div>
+  </div>
+
+  <div class="state" id="state-vote">
+    <div class="vote-row-meta">
+      <span class="vote-meta-label">Votre réponse</span>
+      <span id="vote-timer-text">—</span>
+    </div>
+    <div id="vote-question-text"></div>
+    <div id="multiple-choice-hint"></div>
+    <div class="vote-col" id="vote-buttons-col"></div>
+    <div id="vote-waiting-msg">&#9203; Enregistrement…</div>
+  </div>
+
+  <div class="state" id="state-voted">
+    <div class="voted-check">✓</div>
+    <div class="voted-label">Réponse enregistrée</div>
+    <div class="voted-sub">En attente des résultats…</div>
+  </div>
+
+  <div class="state" id="state-result">
+    <div class="result-title">Résultats</div>
+    <div id="result-rows-container"></div>
+    <div class="result-next">En attente de la prochaine question…</div>
+  </div>
+
+  <div class="state" id="state-paused">
+    <div class="pause-icon">⏸</div>
+    <div class="pause-label">Session en pause</div>
+    <div class="pause-sub">Le formateur reprendra dans quelques instants.</div>
+  </div>
+
+  <div class="state" id="state-error">
+    <div class="error-icon">⚠️</div>
+    <div class="error-label" id="error-msg">Erreur</div>
+    <div class="error-sub">Vérifiez le QR Code et réessayez.</div>
+    <button class="retry-btn" onclick="location.reload()">Réessayer</button>
+  </div>
+
+  <div class="state" id="state-disconnected">
+    <div class="spinner"></div>
+    <div class="disc-label" id="disc-msg">Reconnexion…</div>
+  </div>
+
+  <div class="state" id="state-end">
+    <div class="end-trophy">🎓</div>
+    <div class="end-score" id="end-score">—</div>
+    <div class="end-detail" id="end-detail"></div>
+    <div class="end-status" id="end-status"></div>
+    <div class="end-thanks">Session terminée — merci pour votre participation !</div>
+  </div>
+</main>
+
+<button id="validate-btn" onclick="submitVote()">&#10003; Valider ma réponse</button>
+
+<button id="dbg-toggle" onclick="document.getElementById('dbg-panel').classList.toggle('open')">🐛 debug</button>
+<div id="dbg-panel"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+'use strict';
+
+function dbg(msg, isErr) {
+  console.log('[DBG]', msg);
+  var panel = document.getElementById('dbg-panel');
+  var line = document.createElement('div');
+  line.className = 'dbg-line' + (isErr ? ' err' : '');
+  line.textContent = new Date().toISOString().substr(11,8) + ' ' + msg;
+  panel.insertBefore(line, panel.firstChild);
+  if (panel.children.length > 60) panel.removeChild(panel.lastChild);
+}
+
+var params   = new URLSearchParams(window.location.search);
+var roomCode = (params.get('room') || '').toUpperCase().trim();
+var urlToken = params.get('token') || null;
+
+document.getElementById('room-display').textContent = roomCode || '?';
+dbg('chargé — room:' + roomCode + ' token:' + (urlToken ? urlToken.substr(0,6)+'…' : 'none'));
+dbg('socket.io: ' + (typeof io !== 'undefined' ? 'OK' : 'MANQUANT'), typeof io === 'undefined');
+
+var identity       = { studentId: null, studentName: null, roomCode: roomCode };
+var socket         = null;
+var voted          = false;
+var selectedValues = [];    // string[] — un ou plusieurs choix (mode multi)
+var timerInt       = null;
+var reconnectTimer = null;
+var currentQ       = null;  // { question, choices } dernière question reçue
+var isMultipleChoice = false;
+
+// ── UI helpers ─────────────────────────────────────────────────────────
+function showState(id) {
+  document.querySelectorAll('.state').forEach(function (s) { s.classList.remove('active'); });
+  var el = document.getElementById('state-' + id);
+  if (el) el.classList.add('active');
+  document.getElementById('timer-track').style.display = id === 'vote' ? 'block' : 'none';
+}
+
+function setConnStatus(text, cls) {
+  var el = document.getElementById('conn-status');
+  el.textContent = text; el.className = cls || '';
+}
+
+function startTimer(seconds) {
+  clearInterval(timerInt);
+  var rem  = seconds;
+  var fill = document.getElementById('timer-fill-bar');
+  var text = document.getElementById('vote-timer-text');
+  fill.style.transition = 'none';
+  fill.style.width = '100%';
+  fill.classList.remove('urgent');
+  text.textContent = rem + 's';
+  timerInt = setInterval(function () {
+    rem--;
+    var pct = Math.max(0, rem / seconds * 100);
+    fill.style.transition = 'width 1s linear, background .3s';
+    fill.style.width = pct + '%';
+    text.textContent = Math.max(0, rem) + 's';
+    if (rem <= 10) fill.classList.add('urgent');
+    if (rem <= 0) clearInterval(timerInt);
+  }, 1000);
+}
+
+function decodeHtml(text) {
+  if (!text) return text;
+  var txt = document.createElement('textarea');
+  txt.innerHTML = text;
+  return txt.value;
+}
+
+function applyQuestionData(d) {
+  console.log('[PHONE] applyQuestionData:', JSON.stringify(d));
+  dbg('applyQD: ' + (d && d.question ? d.question.substr(0,30) : 'null'));
+  currentQ = d;
+  dbg('applyQD mc:' + (d ? d.multipleCorrect : 'null'));
+  isMultipleChoice = !!(d && d.multipleCorrect);
+
+  var qt = document.getElementById('vote-question-text');
+  qt.textContent = (d && d.question) ? decodeHtml(d.question) : '';
+  qt.style.display = (d && d.question) ? 'block' : 'none';
+
+  var hint = document.getElementById('multiple-choice-hint');
+  if (hint) {
+    hint.textContent = isMultipleChoice ? 'Plusieurs bonnes réponses possibles — sélectionnez toutes vos réponses' : '';
+    hint.style.display = isMultipleChoice ? 'block' : 'none';
+  }
+
+  var keys = (d && d.choices) ? Object.keys(d.choices).sort() : ['A','B','C','D'];
+  var col = document.getElementById('vote-buttons-col');
+  col.innerHTML = '';
+  var colorVars = {A:'var(--a)',B:'var(--b)',C:'var(--c)',D:'var(--d)',E:'var(--e)',F:'var(--f)'};
+  keys.forEach(function(k) {
+    var btn = document.createElement('button');
+    btn.className = 'vcol-btn vcol-btn-' + k.toLowerCase();
+    btn.id = 'vbtn-' + k;
+    btn.setAttribute('data-key', k);
+    btn.onclick = function() { selectChoice(k); };
+    var choiceText = decodeHtml((d && d.choices && d.choices[k]) || k);
+    btn.innerHTML = '<span class="vcol-key" style="color:' + (colorVars[k]||'#94a3b8') + '">' + k + '</span>'
+      + '<span class="vcol-text" id="vcol-text-' + k + '"></span>';
+    btn.querySelector('#vcol-text-' + k).textContent = choiceText;
+    col.appendChild(btn);
+  });
+  dbg('question text: ' + (d && d.question ? d.question.substr(0,40) : 'aucune') + (isMultipleChoice ? ' [MULTI]' : ''));
+}
+
+function showResult(votes, correctAnswer) {
+  clearInterval(timerInt);
+  var total = Object.values(votes).reduce(function(a,b){return a+b;}, 0);
+  var correct = Array.isArray(correctAnswer) ? correctAnswer : (correctAnswer ? [correctAnswer] : []);
+  var colorVars = {A:'var(--a)',B:'var(--b)',C:'var(--c)',D:'var(--d)',E:'var(--e)',F:'var(--f)'};
+  var bgClasses = {A:'rf-a',B:'rf-b',C:'rf-c',D:'rf-d',E:'rf-e',F:'rf-f'};
+  var container = document.getElementById('result-rows-container');
+  container.innerHTML = '';
+  var keys = Object.keys(votes).sort();
+  keys.forEach(function(k) {
+    if (votes[k] === undefined && votes[k] === 0 && correct.indexOf(k) < 0) return;
+    var pct = total > 0 ? Math.round((votes[k] || 0) / total * 100) : 0;
+    var isCorr = correct.indexOf(k) >= 0;
+    var row = document.createElement('div');
+    row.className = 'res-row' + (isCorr ? ' correct-row' : '');
+    row.id = 'r-row-' + k;
+    row.innerHTML = '<span class="res-key" style="color:' + (colorVars[k]||'#94a3b8') + '">' + k + '</span>'
+      + '<div class="res-track"><div class="res-fill ' + (bgClasses[k]||'') + '" id="rf-' + k + '" style="width:' + pct + '%"></div></div>'
+      + '<span class="res-pct" id="rp-' + k + '">' + pct + '%</span>';
+    container.appendChild(row);
+  });
+  showState('result');
+}
+
+function selectChoice(value) {
+  if (voted) return;
+  dbg('selectChoice k:' + value + ' isMulti:' + isMultipleChoice);
+  var col = document.getElementById('vote-buttons-col');
+  var allBtns = col ? col.querySelectorAll('.vcol-btn') : [];
+  if (isMultipleChoice) {
+    var idx = selectedValues.indexOf(value);
+    if (idx >= 0) {
+      selectedValues.splice(idx, 1);
+    } else {
+      selectedValues.push(value);
+    }
+    allBtns.forEach(function(btn) {
+      var k = btn.getAttribute('data-key');
+      btn.classList.toggle('choice-selected', selectedValues.indexOf(k) >= 0);
+    });
+    var vbtn = document.getElementById('validate-btn');
+    if (selectedValues.length > 0) {
+      vbtn.style.display = 'block';
+      vbtn.style.animation = 'none'; vbtn.offsetHeight; vbtn.style.animation = 'slideUp .2s ease';
+    } else {
+      vbtn.style.display = 'none';
+    }
+  } else {
+    selectedValues = [value];
+    allBtns.forEach(function(btn) {
+      var k = btn.getAttribute('data-key');
+      btn.classList.toggle('choice-selected', k === value);
+    });
+    var vbtn = document.getElementById('validate-btn');
+    vbtn.style.display = 'block';
+    vbtn.style.animation = 'none'; vbtn.offsetHeight; vbtn.style.animation = 'slideUp .2s ease';
+  }
+}
+
+function submitVote() {
+  if (voted || selectedValues.length === 0 || !socket || !socket.connected) return;
+  voted = true;
+  var col = document.getElementById('vote-buttons-col');
+  if (col) col.querySelectorAll('.vcol-btn').forEach(function(btn) { btn.disabled = true; });
+  document.getElementById('validate-btn').style.display = 'none';
+  document.getElementById('vote-waiting-msg').style.display = 'block';
+  var valueToSend = isMultipleChoice ? selectedValues.slice() : selectedValues[0];
+  socket.emit('submit_vote', { value: valueToSend });
+}
+
+// ── Identity resolution ────────────────────────────────────────────────
+function start() {
+  if (!roomCode) {
+    showState('error');
+    document.getElementById('error-msg').textContent = "Aucun code dans l'URL — scannez le QR Code";
+    return;
+  }
+
+  if (urlToken) {
+    fetch('/api/auth/resolve-token?token=' + encodeURIComponent(urlToken))
+      .then(function (r) {
+        if (!r.ok) throw new Error('Token expiré — rescannez le QR Code');
+        return r.json();
+      })
+      .then(function (data) {
+        identity.studentId   = data.studentId;
+        identity.studentName = data.studentName || data.studentId;
+        identity.roomCode    = data.roomCode || roomCode;
+        connect();
+      })
+      .catch(function (err) {
+        showState('error');
+        document.getElementById('error-msg').textContent = err.message;
+      });
+  } else {
+    // Fallback : identity from localStorage (admin QR / direct URL)
+    var storedId = localStorage.getItem('scorm_voter_id');
+    if (!storedId) {
+      storedId = 'phone-' + Math.random().toString(36).substr(2, 8);
+      localStorage.setItem('scorm_voter_id', storedId);
+    }
+    identity.studentId   = storedId;
+    identity.studentName = 'Smartphone-' + storedId.substr(-4).toUpperCase();
+    connect();
+  }
+}
+
+function connect() {
+  document.getElementById('greet-name').textContent = identity.studentName;
+  fetch('/api/auth/learner-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ learnerId: identity.studentId, name: identity.studentName }),
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    return fetch('/api/rooms/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.token },
+      body: JSON.stringify({ code: identity.roomCode }),
+    });
+  })
+  .then(function (r) {
+    if (!r.ok) throw new Error('Salle introuvable ou fermée (HTTP ' + r.status + ')');
+    return r.json();
+  })
+  .then(function (data) {
+    if (socket) { socket.disconnect(); socket = null; }
+    socket = io({ auth: { token: data.token } });
+    voted = false;
+    setupSocket();
+  })
+  .catch(function (err) {
+    showState('error');
+    document.getElementById('error-msg').textContent = err.message || 'Erreur de connexion';
+    setConnStatus('Erreur', 'err');
+  });
+}
+
+function scheduleReconnect() {
+  clearTimeout(reconnectTimer);
+  showState('disconnected');
+  document.getElementById('disc-msg').textContent = 'Reconnexion dans 3 secondes…';
+  reconnectTimer = setTimeout(connect, 3000);
+}
+
+// ── Socket events ──────────────────────────────────────────────────────
+function setupSocket() {
+  socket.on('connect', function () {
+    dbg('socket connecté — id:' + socket.id);
+    setConnStatus('Connecté', 'ok');
+    clearTimeout(reconnectTimer);
+    socket.emit('learner_arrived', {});
+    showState('waiting');
+    document.getElementById('wait-msg').textContent = "En attente d'un vote…";
+  });
+
+  socket.on('disconnect', function () {
+    setConnStatus('Déconnecté', 'err');
+    clearInterval(timerInt);
+    scheduleReconnect();
+  });
+
+  socket.on('connect_error', function () {
+    setConnStatus('Erreur', 'err');
+    scheduleReconnect();
+  });
+
+  socket.on('question_data', function (d) {
+    applyQuestionData(d);
+  });
+
+  socket.on('vote_open', function (d) {
+    console.log('[PHONE] vote_open reçu:', JSON.stringify(d));
+    console.log('[PHONE] questionData présent:', !!d.questionData, '/ currentQ en cache:', !!currentQ);
+    dbg('vote_open sp:' + d.syncPoint + ' qd:' + (d.questionData ? 'OUI' : 'non') + ' mc:' + (d.questionData ? d.questionData.multipleCorrect : '-') + ' cache:' + (currentQ ? 'OUI' : 'non'));
+    voted = false;
+    selectedValues = [];
+    var col10 = document.getElementById('vote-buttons-col');
+    if (col10) col10.querySelectorAll('.vcol-btn').forEach(function(btn) {
+      btn.disabled = false;
+      var k = btn.getAttribute('data-key') || '';
+      btn.className = 'vcol-btn vcol-btn-' + k.toLowerCase();
+    });
+    document.getElementById('validate-btn').style.display = 'none';
+    document.getElementById('vote-waiting-msg').style.display = 'none';
+    startTimer(d.timerSeconds || 45);
+    showState('vote');
+    if (d.questionData) {
+      applyQuestionData(d.questionData);
+    } else if (currentQ) {
+      applyQuestionData(currentQ);
+    } else {
+      // Fallback : demander au backend si questionData absent de vote_open
+      dbg('fallback get_question_data…');
+      socket.emit('get_question_data', {}, function (qd) {
+        console.log('[PHONE] get_question_data callback:', JSON.stringify(qd));
+        dbg('get_qd réponse:' + (qd ? qd.question && qd.question.substr(0,20) : 'null'), !qd);
+        if (qd) applyQuestionData(qd);
+      });
+    }
+  });
+
+  socket.on('vote_ack', function (d) {
+    if (d.ok) {
+      clearInterval(timerInt);
+      document.getElementById('timer-track').style.display = 'none';
+      // Rester dans state-vote : le message d'attente est déjà affiché par submitVote()
+    } else {
+      // Erreur : ré-activer le vote
+      voted = false;
+      var col11 = document.getElementById('vote-buttons-col');
+      if (col11) col11.querySelectorAll('.vcol-btn').forEach(function(btn) { btn.disabled = false; });
+      document.getElementById('vote-waiting-msg').style.display = 'none';
+      if (selectedValues.length > 0) document.getElementById('validate-btn').style.display = 'block';
+      dbg('vote_ack erreur: ' + (d.error || '?'), true);
+    }
+  });
+
+  socket.on('vote_result', function (d) {
+    var correctAnswer = d.correctAnswer || null;
+    var correctArr = Array.isArray(correctAnswer) ? correctAnswer : (correctAnswer ? [correctAnswer] : []);
+    // Colorer brièvement les boutons sélectionnés avant d'afficher les résultats
+    if (selectedValues.length > 0) {
+      selectedValues.forEach(function(sv) {
+        var btn = document.getElementById('vbtn-' + sv);
+        if (btn) {
+          btn.classList.remove('choice-selected');
+          btn.classList.add(correctArr.indexOf(sv) >= 0 ? 'voted-correct' : 'voted-wrong');
+        }
+      });
+    }
+    var delay = selectedValues.length > 0 ? 700 : 0;
+    setTimeout(function () {
+      showResult(d.votes || { A: 0, B: 0, C: 0, D: 0 }, correctAnswer);
+    }, delay);
+  });
+
+  socket.on('debate_open', function () {
+    document.getElementById('wait-msg').textContent = 'Débat — 2ème vote à venir…';
+    showState('waiting');
+  });
+
+  socket.on('continue_all', function (d) {
+    voted = false;
+    if (d && d.isLastQuestion) {
+      document.getElementById('wait-msg').textContent = 'Dernière question terminée — en attente du score final…';
+      dbg('continue_all — dernière question, attente session_complete');
+    } else {
+      document.getElementById('wait-msg').textContent = 'En attente de la prochaine question…';
+    }
+    showState('waiting');
+  });
+
+  socket.on('session_complete', function (d) {
+    clearInterval(timerInt);
+    dbg('session_complete score:' + d.score + ' correct:' + d.correct + '/' + d.total);
+    var score   = d.score   != null ? d.score   : 0;
+    var correct = d.correct != null ? d.correct : 0;
+    var total   = d.total   != null ? d.total   : 0;
+    var pass    = score >= 50;
+    var scoreEl  = document.getElementById('end-score');
+    var detailEl = document.getElementById('end-detail');
+    var statusEl = document.getElementById('end-status');
+    scoreEl.textContent  = score + '%';
+    scoreEl.className    = 'end-score ' + (pass ? 'pass' : 'fail');
+    detailEl.textContent = correct + ' / ' + total + ' bonnes réponses';
+    statusEl.textContent = pass ? '✓ Réussi' : '✗ À retravailler';
+    statusEl.className   = 'end-status ' + (pass ? 'pass' : 'fail');
+    showState('end');
+  });
+
+  socket.on('skip_sync', function () {
+    voted = false;
+    document.getElementById('wait-msg').textContent = 'En attente de la prochaine question…';
+    showState('waiting');
+  });
+
+  socket.on('global_pause', function () {
+    clearInterval(timerInt);
+    showState('paused');
+  });
+
+  socket.on('global_resume', function () {
+    document.getElementById('wait-msg').textContent = 'Session reprise…';
+    showState('waiting');
+  });
+}
+
+start();
+</script>
+</body>
+</html>
