@@ -60,7 +60,7 @@ function registerLearnerHandlers(io, socket) {
     }
   });
 
-  socket.on('learner_arrived', ({ syncPoint } = {}) => {
+  socket.on('learner_arrived', ({ syncPoint, source } = {}) => {
     const roomId = user.roomId;
     logger.info('[learner_arrived]', { learnerId: user.sub, syncPoint: syncPoint || '(none)', roomId });
     if (!roomId) { socket.emit('error', { message: 'No room in token — call /api/rooms/join first' }); return; }
@@ -114,6 +114,7 @@ function registerLearnerHandlers(io, socket) {
         io.to(`room:${roomId}`).emit('learner_connected', {
           learnerId:   user.sub,
           learnerName: names[user.sub] || user.name || 'Apprenant',
+          source,
         });
 
         // If question data exists, push it to this socket (late joiner or QR watcher)
@@ -247,7 +248,6 @@ function registerLearnerHandlers(io, socket) {
       await roomService.updateRoom(roomId, {
         status:           ROOM_STATUS.CONTENT,
         currentSyncPoint: null,
-        waitingLearners:  [],
         votes:            { A: 0, B: 0, C: 0, D: 0 },
         vote1Results:     null,
       });

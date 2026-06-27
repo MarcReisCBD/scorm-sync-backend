@@ -286,6 +286,14 @@
                        color: #fff; }
     .btn-room-solo:hover:not(:disabled) { background: rgba(255,255,255,.22); opacity: 1; }
 
+    /* ── QR modal (vote state — click to enlarge) ──────────────── */
+    #qr-modal { display:none; position:fixed; inset:0; z-index:300; background:rgba(15,23,42,.88); align-items:center; justify-content:center; flex-direction:column; gap:16px; cursor:pointer; }
+    #qr-modal.open { display:flex; }
+    #qr-modal-inner { background:#fff; border-radius:16px; padding:16px; }
+    #qr-modal-hint  { color:#fff; font-size:14px; opacity:.65; }
+    #qr-vote-container { cursor:pointer; display:inline-block; }
+    .qr-vote-tap { font-size:11px; color:var(--muted); text-align:center; margin-top:4px; }
+
     /* ── Pause overlay ────────────────────────────────────────────── */
     #pause-overlay {
       display: none;
@@ -307,6 +315,12 @@
   </style>
 </head>
 <body>
+
+<!-- ── QR modal ────────────────────────────────────────────────────────── -->
+<div id="qr-modal" onclick="closeQRModal()">
+  <div id="qr-modal-inner"></div>
+  <div id="qr-modal-hint">Appuyez pour fermer</div>
+</div>
 
 <!-- ── Status bar ─────────────────────────────────────────────────────── -->
 <div id="status-bar" class="s-connecting">
@@ -402,8 +416,9 @@
         <!-- Mode connecté : QR Code + compteur -->
         <div id="q-smartphone">
           <p style="color:var(--muted);font-size:14px;font-weight:600">Répondez sur votre smartphone</p>
-          <div class="qr-wrap">
-            <div id="qr-vote-container"></div>
+          <div class="qr-wrap" style="flex-direction:column;align-items:center">
+            <div id="qr-vote-container" onclick="openQRModal()"></div>
+            <div class="qr-vote-tap">Appuyer pour agrandir</div>
           </div>
           <div class="qr-progress">
             <span class="qr-count" id="vote-progress-count">0</span>
@@ -862,6 +877,8 @@ function _enterQuestion(index) {
 
 function _setQState(state) {
   app.qState = state;
+  // Hide question text before vote opens — avoids revealing it to the room before quorum
+  document.getElementById('q-text').style.display = (state === 'vote' || state === 'result') ? 'block' : 'none';
   // 'loading' = attente ACK sendQuestionData — affiche le même spinner que 'waiting'
   document.getElementById('q-waiting').style.display = (state === 'waiting' || state === 'loading') ? 'flex' : 'none';
   document.getElementById('q-vote'   ).style.display = state === 'vote'    ? 'flex'  : 'none';
@@ -874,9 +891,25 @@ function _setQState(state) {
     if (sm && app.voteUrl) {
       document.getElementById('vote-progress-count').textContent = '0';
       document.getElementById('vote-progress-total').textContent = '?';
-      window.ScormSync.renderQR('qr-vote-container', app.voteUrl, 192);
+      // Small 64px thumbnail — click opens full-size modal
+      var voteQrEl = document.getElementById('qr-vote-container');
+      voteQrEl.innerHTML = '';
+      window.ScormSync.renderQR('qr-vote-container', app.voteUrl, 64);
     }
   }
+}
+
+function openQRModal() {
+  if (!app.voteUrl) return;
+  var modal = document.getElementById('qr-modal');
+  var inner = document.getElementById('qr-modal-inner');
+  inner.innerHTML = '';
+  window.ScormSync.renderQR('qr-modal-inner', app.voteUrl, 240);
+  modal.classList.add('open');
+}
+
+function closeQRModal() {
+  document.getElementById('qr-modal').classList.remove('open');
 }
 
 function submitVote(value) {
@@ -1115,6 +1148,14 @@ function _setupHandlers() {
         var secs = parseInt(document.getElementById('timer-text').textContent) + d.extraSeconds;
         _startTimer(secs);
       }
+    })
+
+    .on('kicked', function (d) {
+      var identity = window.ScormSync.getIdentity();
+      if (d && d.learnerId && d.learnerId !== identity.studentId) return;
+      clearInterval(app.timerHandle);
+      app.degraded = true;
+      setStatus('error', 'Vous avez été retiré de la session par le formateur.');
     });
 }
 </script>

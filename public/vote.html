@@ -188,6 +188,22 @@
     .end-status.fail { background: rgba(248,113,113,.15); color: #f87171; }
     .end-thanks { font-size: 13px; color: var(--muted); margin-top: 12px; max-width: 260px; line-height: 1.5; }
 
+    /* Name entry (display QR — no LMS identity) */
+    #state-name-entry { align-items: center; justify-content: center; gap: 18px; padding: 32px 24px; text-align: center; }
+    .name-entry-title { font-size: 22px; font-weight: 800; color: var(--text); }
+    .name-entry-sub   { font-size: 14px; color: var(--muted); max-width: 280px; }
+    #name-input {
+      width: 100%; max-width: 320px; padding: 14px 16px;
+      background: var(--surface); border: 2px solid var(--border); border-radius: 12px;
+      color: var(--text); font-size: 18px; font-weight: 600; text-align: center;
+      outline: none;
+    }
+    #name-input:focus { border-color: #38bdf8; }
+    #name-submit-btn {
+      width: 100%; max-width: 320px; padding: 14px; border: none; border-radius: 12px;
+      background: #38bdf8; color: #0f172a; font-size: 17px; font-weight: 800; cursor: pointer;
+    }
+
     /* Debug panel */
     #dbg-toggle { position: fixed; bottom: 8px; right: 8px; z-index: 200; background: #334155; color: #94a3b8; border: none; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
     #dbg-panel { display: none; position: fixed; bottom: 34px; left: 0; right: 0; max-height: 40vh; overflow-y: auto; background: rgba(15,23,42,.95); border-top: 1px solid #334155; padding: 6px 10px; z-index: 199; }
@@ -208,6 +224,14 @@
   <div class="state active" id="state-loading">
     <div class="spinner"></div>
     <div id="loading-msg">Identification…</div>
+  </div>
+
+  <div class="state" id="state-name-entry">
+    <div class="name-entry-title">Bienvenue !</div>
+    <div class="name-entry-sub">Entrez votre prénom pour participer</div>
+    <input id="name-input" type="text" placeholder="Votre prénom" maxlength="40"
+      onkeydown="if(event.key==='Enter')submitName()" autocomplete="given-name" />
+    <button id="name-submit-btn" onclick="submitName()">Rejoindre la session</button>
   </div>
 
   <div class="state" id="state-waiting">
@@ -289,6 +313,8 @@ function dbg(msg, isErr) {
 var params   = new URLSearchParams(window.location.search);
 var roomCode = (params.get('room') || '').toUpperCase().trim();
 var urlToken = params.get('token') || null;
+var urlName  = params.get('name')  || null;   // transmis par le QR du mode smartphone quiz-embed
+var urlId    = params.get('id')    || null;
 
 document.getElementById('room-display').textContent = roomCode || '?';
 dbg('chargé — room:' + roomCode + ' token:' + (urlToken ? urlToken.substr(0,6)+'…' : 'none'));
@@ -344,6 +370,11 @@ function decodeHtml(text) {
 }
 
 function applyQuestionData(d) {
+  // Strip correct answer — must not be shown during vote phase
+  if (d && d.correct !== undefined) {
+    d = Object.assign({}, d);
+    delete d.correct;
+  }
   console.log('[PHONE] applyQuestionData:', JSON.stringify(d));
   dbg('applyQD: ' + (d && d.question ? d.question.substr(0,30) : 'null'));
   currentQ = d;
@@ -464,26 +495,61 @@ function start() {
         return r.json();
       })
       .then(function (data) {
-        identity.studentId   = data.studentId;
-        identity.studentName = data.studentName || data.studentId;
-        identity.roomCode    = data.roomCode || roomCode;
-        connect();
+        identity.roomCode = data.roomCode || roomCode;
+        if (data.studentId) {
+          // Token SCORM — identité LMS connue
+          identity.studentId   = data.studentId;
+          identity.studentName = data.studentName || data.studentId;
+          connect();
+        } else {
+          // QR générique (display) — résoudre via localStorage
+          resolveLocalIdentity();
+        }
       })
       .catch(function (err) {
         showState('error');
         document.getElementById('error-msg').textContent = err.message;
       });
   } else {
-    // Fallback : identity from localStorage (admin QR / direct URL)
-    var storedId = localStorage.getItem('scorm_voter_id');
-    if (!storedId) {
-      storedId = 'phone-' + Math.random().toString(36).substr(2, 8);
-      localStorage.setItem('scorm_voter_id', storedId);
-    }
-    identity.studentId   = storedId;
-    identity.studentName = 'Smartphone-' + storedId.substr(-4).toUpperCase();
-    connect();
+    // Pas de token — résoudre via localStorage
+    resolveLocalIdentity();
   }
+}
+
+function resolveLocalIdentity() {
+  // Identité transmise dans l'URL par le QR du mode smartphone (quiz-embed)
+  if (urlName) {
+    identity.studentId   = urlId || ('phone-' + Math.random().toString(36).substr(2, 8));
+    identity.studentName = urlName;
+    connect();
+    return;
+  }
+  var storedId   = localStorage.getItem('scorm_voter_id');
+  var storedName = localStorage.getItem('scorm_voter_name');
+  if (!storedId) {
+    storedId = 'phone-' + Math.random().toString(36).substr(2, 8);
+    localStorage.setItem('scorm_voter_id', storedId);
+  }
+  identity.studentId = storedId;
+  if (storedName) {
+    identity.studentName = storedName;
+    connect();
+  } else {
+    showState('name-entry');
+    setTimeout(function() {
+      var inp = document.getElementById('name-input');
+      if (inp) inp.focus();
+    }, 150);
+  }
+}
+
+function submitName() {
+  var inp  = document.getElementById('name-input');
+  var name = inp ? inp.value.trim() : '';
+  if (!name) { if (inp) { inp.focus(); inp.style.borderColor = '#f87171'; } return; }
+  localStorage.setItem('scorm_voter_name', name);
+  identity.studentName = name;
+  connect();
 }
 
 function connect() {
@@ -668,6 +734,17 @@ function setupSocket() {
   socket.on('global_resume', function () {
     document.getElementById('wait-msg').textContent = 'Session reprise…';
     showState('waiting');
+  });
+
+  socket.on('kicked', function (d) {
+    if (d && d.learnerId && d.learnerId !== identity.studentId) return;
+    clearInterval(timerInt);
+    clearTimeout(reconnectTimer);
+    if (socket) { socket.disconnect(); socket = null; }
+    showState('error');
+    document.getElementById('error-msg').textContent = 'Vous avez été retiré de la session par le formateur.';
+    setConnStatus('Retiré', 'err');
+    dbg('kicked par formateur', true);
   });
 }
 

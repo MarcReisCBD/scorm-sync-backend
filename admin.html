@@ -92,6 +92,20 @@
     .btn-ghost:hover:not(:disabled) { background: var(--bg); }
     .btn-sm { padding: 5px 10px; font-size: 12px; }
 
+    /* ── Screen picker dropdown ── */
+    #screen-menu {
+      position: fixed; z-index: 9999;
+      background: var(--white); border: 1px solid var(--border2);
+      border-radius: var(--rs); box-shadow: 0 6px 24px rgba(0,0,0,.12);
+      padding: 4px 0; min-width: 220px;
+    }
+    #screen-menu button {
+      display: block; width: 100%; padding: 9px 16px; text-align: left;
+      background: none; border: none; cursor: pointer;
+      font-size: 13px; color: var(--text); border-radius: 0;
+    }
+    #screen-menu button:hover { background: var(--bg); }
+
     #hrow2 { display: none; align-items: center; gap: 16px; padding: 10px 20px; }
     .code-big { display: flex; align-items: baseline; gap: 10px; }
     .code-big-label { font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: .06em; }
@@ -142,6 +156,10 @@
     .pb-here   { background: #DCFCE7; color: #15803D; }
     .pb-voted  { background: #FEF9C3; color: #A16207; }
     .pb-absent { background: var(--border); color: var(--text-mut); }
+    .pb-scorm  { background: #EDE9FE; color: #7C3AED; }
+    .pax-kick { flex-shrink:0; width:22px; height:22px; border-radius:50%; border:none; background:transparent; color:var(--text-mut); font-size:11px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .15s, background .15s; }
+    .pax-card:hover .pax-kick { opacity:1; }
+    .pax-kick:hover { background:#FEE2E2; color:#DC2626; }
 
     /* ── VOTE COLUMN ────────────────────────────────────────── */
     #vote-body { display: flex; flex-direction: column; gap: 12px; }
@@ -487,7 +505,8 @@
         <input type="checkbox" id="auto-vote-cb" checked onchange="toggleAutoVote(this.checked)" style="cursor:pointer;accent-color:var(--primary)">
         Vote auto
       </label>
-      <button class="btn-ghost btn-sm" onclick="openDisplay()" title="Ouvrez cette fenêtre sur votre écran secondaire ou projecteur">📺 Écran de diffusion</button>
+      <button class="btn-ghost btn-sm" onclick="openDisplay()" title="Ouvrir l'écran de diffusion dans une nouvelle fenêtre">📺 Écran de diffusion</button>
+      <button class="btn-ghost btn-sm" id="btn-project" onclick="projectDisplay()" title="Projeter sur un écran secondaire (Chrome uniquement)">📺 Projeter</button>
       <button class="btn-ghost btn-sm" onclick="newSession()">↩ Nouvelle session</button>
     </div>
     <div id="hrow2-qr-wrap">
@@ -912,10 +931,88 @@ function emitAct(ev, data) {
   log('action', '→ ' + ev + '  ' + JSON.stringify(data));
   st.socket.emit(ev, data); toast('Action envoyée ✓', true);
 }
+function kickLearner(learnerId) {
+  if (!learnerId || !st.socket) return;
+  if (!confirm('Retirer ce participant de la session ?')) return;
+  st.socket.emit('kick_learner', { learnerId });
+  log('action', '→ kick_learner  ' + learnerId.slice(0,8) + '…');
+  toast('Participant retiré ✓', true);
+}
 function copyCode() { navigator.clipboard.writeText(st.roomCode||'').then(() => toast('Code copié ✓', true)); }
 function openDisplay() {
   if (!st.roomCode) return;
   window.open('/display?room=' + encodeURIComponent(st.roomCode), '_blank', 'width=1280,height=720,noopener');
+}
+
+async function projectDisplay() {
+  if (!st.roomCode) return;
+  var url = '/display?room=' + encodeURIComponent(st.roomCode) + '&fullscreen=1';
+
+  if (!window.getScreenDetails) {
+    alert('Fonctionnalité disponible sur Chrome uniquement (Chrome 100+, permission "Gestion des fenêtres" requise).');
+    return;
+  }
+
+  try {
+    var sd = await window.getScreenDetails();
+    var screens = sd.screens;
+    if (screens.length <= 1) {
+      openOnScreen(url, screens[0] || screen);
+    } else {
+      showScreenMenu(url, screens);
+    }
+  } catch (e) {
+    if (e.name === 'NotAllowedError') {
+      alert('Permission refusée. Autorisez la gestion des fenêtres dans les paramètres du navigateur (🔒 dans la barre d\'adresse).');
+    } else {
+      // Fallback silencieux : ouvrir sans positionnement
+      window.open(url, '_blank', 'width=1280,height=720,noopener');
+    }
+  }
+}
+
+function openOnScreen(url, scr) {
+  var left   = scr.availLeft   !== undefined ? scr.availLeft   : 0;
+  var top    = scr.availTop    !== undefined ? scr.availTop    : 0;
+  var width  = scr.availWidth  || 1920;
+  var height = scr.availHeight || 1080;
+  window.open(url, '_blank',
+    'left=' + left + ',top=' + top + ',width=' + width + ',height=' + height + ',noopener');
+}
+
+function showScreenMenu(url, screens) {
+  var existing = document.getElementById('screen-menu');
+  if (existing) { existing.remove(); return; }
+
+  var menu = document.createElement('div');
+  menu.id = 'screen-menu';
+
+  screens.forEach(function(scr, i) {
+    var btn = document.createElement('button');
+    btn.textContent = scr.label || ('Écran ' + (i + 1));
+    btn.onclick = function() { menu.remove(); openOnScreen(url, scr); };
+    menu.appendChild(btn);
+  });
+
+  document.body.appendChild(menu);
+
+  // Positionner sous le bouton "Projeter"
+  var anchor = document.getElementById('btn-project');
+  if (anchor) {
+    var r = anchor.getBoundingClientRect();
+    menu.style.left = r.left + 'px';
+    menu.style.top  = (r.bottom + 4) + 'px';
+  }
+
+  // Fermer au clic extérieur
+  setTimeout(function() {
+    document.addEventListener('click', function onOutside(e) {
+      if (!menu.contains(e.target) && e.target !== document.getElementById('btn-project')) {
+        menu.remove();
+        document.removeEventListener('click', onOutside);
+      }
+    });
+  }, 0);
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────
@@ -1109,9 +1206,10 @@ function renderPax() {
   empty.style.display = (paxMap.size === 0 && st.roomCode) ? 'block' : 'none';
   paxMap.forEach(p => {
     const card = document.createElement('div');
-    const si = { phone:{cls:'s-phone',badge:'pb-phone',lbl:'🔵 Smartphone'}, here:{cls:'s-here',badge:'pb-here',lbl:'🟢 Au sas'}, voted:{cls:'s-voted',badge:'pb-voted',lbl:'🟠 A voté'}, absent:{cls:'s-absent',badge:'pb-absent',lbl:'⚫ En attente'} }[p.status]||{cls:'s-absent',badge:'pb-absent',lbl:'—'};
+    const si = { phone:{cls:'s-phone',badge:'pb-phone',lbl:'🔵 Smartphone'}, scorm:{cls:'s-phone',badge:'pb-scorm',lbl:'🟣 SCORM'}, here:{cls:'s-here',badge:'pb-here',lbl:'🟢 Au sas'}, voted:{cls:'s-voted',badge:'pb-voted',lbl:'🟠 A voté'}, absent:{cls:'s-absent',badge:'pb-absent',lbl:'⚫ En attente'} }[p.status]||{cls:'s-absent',badge:'pb-absent',lbl:'—'};
     card.className = 'pax-card ' + si.cls;
-    card.innerHTML = `<div class="pax-av" style="background:${nameColor(p.name)}">${initials(p.name)}</div><div class="pax-info"><div class="pax-name">${p.name}</div><div class="pax-sub">${p.id}</div></div><span class="pax-badge ${si.badge}">${si.lbl}</span>`;
+    const esc = (s) => String(s).replace(/'/g, "\\'");
+    card.innerHTML = `<div class="pax-av" style="background:${nameColor(p.name)}">${initials(p.name)}</div><div class="pax-info"><div class="pax-name">${p.name}</div><div class="pax-sub">${p.id}</div></div><span class="pax-badge ${si.badge}">${si.lbl}</span><button class="pax-kick" title="Retirer de la session" onclick="kickLearner('${esc(p.id)}')">✕</button>`;
     list.appendChild(card);
   });
   document.getElementById('pax-counter').textContent = paxMap.size + ' / ' + st.totalSlots;
@@ -1126,10 +1224,11 @@ function updateFromWaiting(learners, total) {
   });
   renderPax();
 }
-function markPhone(id, name) {
+function markPhone(id, name, source) {
+  const status = source === 'scorm-embed' ? 'scorm' : 'phone';
   const ex = paxMap.get(id);
-  if (ex) { ex.status = 'phone'; ex._base = 'phone'; if (name) ex.name = name; }
-  else paxMap.set(id, {id, name:name||id, status:'phone', _base:'phone'});
+  if (ex) { ex.status = status; ex._base = status; if (name) ex.name = name; }
+  else paxMap.set(id, {id, name:name||id, status, _base:status});
   renderPax();
 }
 function resetVotedStatuses() { paxMap.forEach(p => { if (p.status === 'voted') p.status = p._base||'phone'; }); renderPax(); }
@@ -1327,7 +1426,7 @@ async function createRoom() {
       const url = window.location.origin+'/vote?room='+res.code;
       document.getElementById('hrow2-qr-url').textContent=url;
       document.getElementById('hrow2-qr').innerHTML='';
-      try { new QRCode(document.getElementById('hrow2-qr'), {text:url,width:70,height:70,colorDark:'#000',colorLight:'#fff'}); } catch(e){}
+      try { new QRCode(document.getElementById('hrow2-qr'), {text:url,width:90,height:90,colorDark:'#000',colorLight:'#fff'}); } catch(e){}
     });
     connectSocket();
     showQuizConfig();
@@ -1359,8 +1458,9 @@ function connectSocket() {
   });
 
   s.on('learner_connected', (d) => {
-    log('connect','Smartphone — '+d.learnerName+' ('+d.learnerId+')');
-    markPhone(d.learnerId, d.learnerName);
+    const src = d.source === 'scorm-embed' ? 'SCORM' : 'Smartphone';
+    log('connect', src + ' — ' + d.learnerName + ' (' + d.learnerId + ')');
+    markPhone(d.learnerId, d.learnerName, d.source);
     ensureAnalyticsEntry(d.learnerId, d.learnerName);
   });
 
@@ -1434,6 +1534,11 @@ function connectSocket() {
   });
 
   s.on('error', (d) => log('error', JSON.stringify(d)));
+
+  s.on('kicked', (d) => {
+    log('event', 'kicked  learnerId=' + (d && d.learnerId ? d.learnerId.slice(0,8) + '…' : '?'));
+    if (d && d.learnerId) { paxMap.delete(d.learnerId); renderPax(); }
+  });
 
   s.on('session_complete', (d) => {
     log('score','session_complete  score='+d.score+'%  '+d.correct+'/'+d.total+'  '+d.learnerId);

@@ -131,15 +131,25 @@ function registerTrainerHandlers(io, socket) {
     try {
       const room = await roomService.getRoomById(roomId);
       const lastSyncPoint = room ? room.currentSyncPoint : null;
+
+      // Track completed syncPoints to detect last question
+      const completedSPs = [...(room.completedSyncPoints || [])];
+      if (lastSyncPoint && !completedSPs.includes(lastSyncPoint)) completedSPs.push(lastSyncPoint);
+      const isLastQuestion = room.totalQuestions > 0
+        ? completedSPs.length >= room.totalQuestions
+        : lastSyncPoint === 'q3'; // fallback for hardcoded mode
+
+      // waitingLearners NOT reset — phones stay counted across questions so quorum
+      // auto-triggers for Q2+ when SCORM calls arrived(syncPoint) again
       await roomService.updateRoom(roomId, {
-        status:           ROOM_STATUS.WAITING,
-        waitingLearners:  [],
-        currentSyncPoint: null,
-        votes:            { A: 0, B: 0, C: 0, D: 0 },
-        vote1Results:     null,
+        status:              ROOM_STATUS.WAITING,
+        currentSyncPoint:    null,
+        votes:               { A: 0, B: 0, C: 0, D: 0 },
+        vote1Results:        null,
+        completedSyncPoints: completedSPs,
       });
-      logger.info('[continue_all] room reset to WAITING', { roomId, lastSyncPoint });
-      io.to(`room:${roomId}`).emit('continue_all', { isLastQuestion: lastSyncPoint === 'q3' });
+      logger.info('[continue_all] room reset to WAITING', { roomId, lastSyncPoint, isLastQuestion });
+      io.to(`room:${roomId}`).emit('continue_all', { isLastQuestion });
     } catch (err) {
       socket.emit('error', { message: err.message });
     }
@@ -163,6 +173,31 @@ function registerTrainerHandlers(io, socket) {
       logger.info('[set_auto_vote]', { roomId, enabled });
     } catch (err) {
       logger.error('set_auto_vote error', { err: err.message });
+    }
+  });
+
+  socket.on('kick_learner', async ({ learnerId } = {}) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || !learnerId) return;
+    try {
+      const room = await roomService.getRoomById(roomId);
+      if (!room) return;
+      const waiting = (room.waitingLearners || []).filter(id => id !== learnerId);
+      const names   = { ...(room.learnerNames || {}) };
+      delete names[learnerId];
+      await roomService.updateRoom(roomId, { waitingLearners: waiting, learnerNames: names });
+      // Broadcast kick — each client checks if its own ID matches
+      io.to(`room:${roomId}`).emit('kicked', { learnerId });
+      // Refresh participant list
+      io.to(`room:${roomId}`).emit('waiting_update', {
+        syncPoint: room.currentSyncPoint,
+        waiting:   waiting.length,
+        total:     room.totalLearners,
+        learners:  waiting.map(id => ({ id, name: names[id] || 'Apprenant' })),
+      });
+      logger.info('[kick_learner]', { roomId, learnerId });
+    } catch (err) {
+      logger.error('kick_learner error', { err: err.message });
     }
   });
 }

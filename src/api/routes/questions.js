@@ -3,6 +3,7 @@ const multer  = require('multer');
 const repo    = require('../../db/questionRepository');
 const { importFromRiseUp } = require('../../services/questionImporter');
 const { httpAuthMiddleware } = require('../../middleware/auth');
+const roomService = require('../../services/roomService');
 const logger  = require('../../utils/logger');
 
 const router  = express.Router();
@@ -88,12 +89,16 @@ router.post('/questions/random', (req, res) => {
 });
 
 // ── POST /api/rooms/:id/quiz/:quizId/questions ─────────────────────────
-router.post('/rooms/:id/quiz/:quizId/questions', httpAuthMiddleware, (req, res) => {
+router.post('/rooms/:id/quiz/:quizId/questions', httpAuthMiddleware, async (req, res) => {
   if (req.user.role !== 'trainer') return res.status(403).json({ error: 'Trainers only' });
   try {
     const { questionIds, language } = req.body;
     if (!Array.isArray(questionIds)) return res.status(400).json({ error: 'questionIds array requis' });
     repo.assignQuestionsToQuiz(req.params.id, req.params.quizId, questionIds, language || 'fr');
+    // Persist totalQuestions in Redis so isLastQuestion can be computed server-side
+    try {
+      await roomService.updateRoom(req.params.id, { totalQuestions: questionIds.length, completedSyncPoints: [] });
+    } catch (_) { /* room may not exist in Redis (test context) — non-fatal */ }
     res.json({ assigned: questionIds.length });
   } catch (err) {
     logger.error('assignQuestionsToQuiz failed', { err: err.message });

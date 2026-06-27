@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz synchronisé</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #F8FAFC;
+      --card:    #FFFFFF;
+      --border:  #E2E8F0;
+      --text:    #1E293B;
+      --muted:   #64748B;
+      --primary: #2563EB;
+      --green:   #16A34A;
+      --red:     #DC2626;
+      --a: #3B82F6; --b: #22C55E; --c: #F97316; --d: #A855F7; --e: #EF4444; --f: #EAB308;
+    }
+    html, body {
+      height: 100%; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px; line-height: 1.5;
+      background: var(--bg); color: var(--text);
+    }
+    body { display: flex; flex-direction: column; }
+
+    .state { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .state.active { display: flex; }
+
+    .spinner {
+      width: 36px; height: 36px; margin: 0 auto;
+      border: 4px solid var(--border); border-top-color: var(--primary);
+      border-radius: 50%; animation: spin .9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn-primary {
+      padding: 12px; border: none; border-radius: 10px;
+      background: var(--primary); color: #fff;
+      font-size: 15px; font-weight: 700; cursor: pointer; transition: opacity .15s;
+    }
+    .btn-primary:hover:not(:disabled) { opacity: .88; }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+    /* ── STATE 0 — JOIN ───────────────────────────────────────────────── */
+    #state-join { align-items: center; justify-content: center; gap: 20px; padding: 28px; text-align: center; }
+    .join-logo  { font-size: 44px; line-height: 1; }
+    .join-title { font-size: 20px; font-weight: 700; }
+    .join-sub   { font-size: 13px; color: var(--muted); max-width: 280px; }
+    .join-form  { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px; }
+    #code-input {
+      width: 100%; padding: 12px 14px; border: 2px solid var(--border); border-radius: 10px;
+      font-size: 22px; font-weight: 800; letter-spacing: .12em; text-align: center;
+      text-transform: uppercase; color: var(--text); background: var(--card); outline: none;
+    }
+    #code-input:focus { border-color: var(--primary); }
+    #join-err { font-size: 12px; color: var(--red); min-height: 16px; }
+
+    /* ── STATE 1 — MODE SELECT ─────────────────────────────────────────── */
+    #state-mode { align-items: center; justify-content: center; gap: 18px; padding: 28px; text-align: center; }
+    .mode-title { font-size: 18px; font-weight: 700; }
+    .mode-room  { font-size: 14px; font-weight: 800; color: var(--primary); letter-spacing: .06em; }
+    .mode-cards { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 320px; }
+    .mode-card {
+      display: flex; align-items: center; gap: 14px;
+      padding: 16px 18px; border: 2px solid var(--border); border-radius: 14px;
+      background: var(--card); cursor: pointer; text-align: left;
+      transition: border-color .15s, background .15s;
+    }
+    .mode-card:hover { border-color: var(--primary); background: #EFF6FF; }
+    .mode-card-icon { font-size: 30px; line-height: 1; flex-shrink: 0; }
+    .mode-card-lbl  { font-size: 15px; font-weight: 700; line-height: 1.3; }
+    .mode-card-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── STATE 2 — PHONE OBSERVER ──────────────────────────────────────── */
+    #state-phone { padding: 0; gap: 0; overflow: hidden; }
+    .phone-qr-section {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 6px; padding: 14px 16px 10px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0; background: var(--card);
+    }
+    #phone-qr { border-radius: 6px; overflow: hidden; background: #fff; }
+    .phone-code      { font-size: 20px; font-weight: 900; letter-spacing: .1em; color: var(--primary); }
+    .phone-scan-hint { font-size: 11px; color: var(--muted); }
+    .phone-live {
+      flex: 1; min-height: 0; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 8px; padding: 10px 14px;
+    }
+    #phone-pax-count { font-size: 12px; color: var(--muted); display: none; }
+    #phone-timer-wrap { flex-shrink: 0; display: none; }
+    #phone-timer-track {
+      height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 3px;
+    }
+    #phone-timer-bar {
+      height: 100%; background: var(--primary); width: 100%;
+      border-radius: 3px; transition: width 1s linear, background .3s;
+    }
+    #phone-timer-bar.urgent { background: var(--red); }
+    #phone-timer-lbl { font-size: 12px; font-weight: 700; font-family: monospace; color: var(--muted); }
+    #phone-question {
+      background: #EFF6FF; border-left: 3px solid var(--primary);
+      padding: 9px 12px; font-size: 13px; font-weight: 600; line-height: 1.5;
+      border-radius: 4px; display: none;
+    }
+    #phone-result-area { display: none; flex-direction: column; gap: 5px; }
+    .pr-row  { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+    .pr-key  { font-size: 12px; font-weight: 700; min-width: 18px; }
+    .pr-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .pr-fill  { height: 100%; border-radius: 4px; width: 0%; transition: width .5s ease; }
+    .pr-pct  { font-size: 11px; font-weight: 700; min-width: 30px; text-align: right; color: var(--muted); }
+    .pr-row.correct .pr-key { font-weight: 900; }
+    #phone-status-msg { font-size: 13px; color: var(--muted); text-align: center; padding: 8px 0; }
+
+    /* ── STATE 3 — SCORM WAITING ───────────────────────────────────────── */
+    #state-waiting { align-items: center; justify-content: center; gap: 14px; padding: 28px; text-align: center; }
+    .wait-title  { font-size: 17px; font-weight: 700; }
+    #pax-counter { font-size: 42px; font-weight: 900; color: var(--primary); line-height: 1; }
+    .pax-sub     { font-size: 13px; color: var(--muted); }
+    .pax-track   { width: 180px; height: 7px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    #pax-fill    { height: 100%; background: var(--primary); border-radius: 4px; width: 0%; transition: width .4s; }
+
+    /* ── STATE 4 — QUIZ ────────────────────────────────────────────────── */
+    #state-quiz { padding: 0; gap: 0; }
+    #timer-strip { height: 5px; background: var(--border); flex-shrink: 0; }
+    #timer-bar   { height: 100%; background: var(--primary); width: 100%; transition: width 1s linear, background .3s; }
+    #timer-bar.urgent { background: var(--red); }
+    .quiz-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 16px; border-bottom: 1px solid var(--border);
+      background: var(--card); flex-shrink: 0;
+    }
+    #quiz-qnum  { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    #quiz-timer { font-size: 17px; font-weight: 900; font-family: monospace; }
+    #quiz-timer.urgent { color: var(--red); }
+    #quiz-question {
+      background: #EFF6FF; border-left: 3px solid var(--primary);
+      padding: 12px 16px; font-size: 15px; font-weight: 600; line-height: 1.5;
+      flex-shrink: 0; display: none;
+    }
+    #multi-hint { font-size: 12px; color: var(--primary); text-align: center; padding: 4px 0; flex-shrink: 0; display: none; }
+    #quiz-choices { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; }
+    .c-btn {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 13px; border: 2px solid var(--border); border-radius: 10px;
+      background: var(--card); cursor: pointer; text-align: left;
+      transition: background .1s, border-color .1s, transform .06s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .c-btn:active:not(:disabled) { transform: scale(.98); }
+    .c-btn:disabled { cursor: not-allowed; opacity: .6; }
+    .c-btn.selected { background: #EFF6FF; border-color: var(--primary); }
+    .c-btn.correct  { background: #F0FDF4; border-color: #22C55E; }
+    .c-btn.wrong    { background: #FEF2F2; border-color: #FCA5A5; }
+    .c-key  { font-size: 13px; font-weight: 800; min-width: 20px; flex-shrink: 0; }
+    .c-text { font-size: 14px; font-weight: 500; line-height: 1.3; flex: 1; }
+    #validate-btn {
+      margin: 0 14px 10px; padding: 11px; border: none; border-radius: 10px;
+      background: var(--green); color: #fff; font-size: 15px; font-weight: 700;
+      cursor: pointer; display: none; flex-shrink: 0;
+    }
+    #result-area { flex: 1; overflow-y: auto; flex-direction: column; gap: 6px; padding: 10px 14px; display: none; }
+    .r-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--card); border: 1px solid var(--border); }
+    .r-row.correct { background: #F0FDF4; border-color: #86EFAC; }
+    .r-key   { font-size: 13px; font-weight: 800; min-width: 18px; }
+    .r-track { flex: 1; height: 9px; background: var(--border); border-radius: 5px; overflow: hidden; }
+    .r-fill  { height: 100%; border-radius: 5px; transition: width .5s ease; width: 0%; }
+    .rf-a { background: var(--a); } .rf-b { background: var(--b); }
+    .rf-c { background: var(--c); } .rf-d { background: var(--d); }
+    .rf-e { background: var(--e); } .rf-f { background: var(--f); }
+    .r-pct { font-size: 12px; font-weight: 700; min-width: 34px; text-align: right; color: var(--muted); }
+    #quiz-banner {
+      text-align: center; padding: 14px 16px; font-size: 14px; color: var(--muted);
+      flex-shrink: 0; display: none; border-top: 1px solid var(--border);
+    }
+
+    /* ── STATE 5 — END ─────────────────────────────────────────────────── */
+    #state-end { align-items: center; justify-content: center; gap: 16px; padding: 28px; text-align: center; }
+    .end-icon   { font-size: 52px; line-height: 1; }
+    #end-score  { font-size: 64px; font-weight: 900; line-height: 1; }
+    #end-score.pass { color: var(--green); }
+    #end-score.fail { color: var(--red); }
+    #end-detail { font-size: 15px; color: var(--muted); }
+    #end-status { font-size: 15px; font-weight: 700; padding: 5px 18px; border-radius: 20px; }
+    #end-status.pass { background: #DCFCE7; color: var(--green); }
+    #end-status.fail { background: #FEE2E2; color: var(--red); }
+    .end-thanks { font-size: 13px; color: var(--muted); max-width: 280px; line-height: 1.6; }
+    #btn-continue {
+      margin-top: 4px; padding: 13px 36px; border: none; border-radius: 10px;
+      background: var(--primary); color: #fff; font-size: 16px; font-weight: 700;
+      cursor: pointer; transition: opacity .15s;
+    }
+    #btn-continue:hover { opacity: .88; }
+
+    /* ── STATE ERR ─────────────────────────────────────────────────────── */
+    #state-error { align-items: center; justify-content: center; gap: 14px; padding: 28px; text-align: center; }
+    .err-icon { font-size: 44px; }
+    #err-msg  { font-size: 14px; font-weight: 700; color: var(--red); max-width: 280px; line-height: 1.5; }
+    .btn-retry {
+      padding: 10px 24px; border: 2px solid var(--primary); border-radius: 8px;
+      background: transparent; color: var(--primary); font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══ STATE 0 — CODE ENTRY ══════════════════════════════════════════════ -->
+<div id="state-join" class="state active">
+  <div class="join-logo">🎓</div>
+  <div class="join-title">Quiz pairagogique</div>
+  <div class="join-sub">Entrez le code de session fourni par votre formateur</div>
+  <div class="join-form">
+    <input id="code-input" type="text" placeholder="TIGRE-42" maxlength="12"
+      autocomplete="off" autocorrect="off" spellcheck="false"
+      oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9-]/g,'')"
+      onkeydown="if(event.key==='Enter')joinRoom()">
+    <button class="btn-primary" id="btn-join" onclick="joinRoom()">Continuer →</button>
+    <div id="join-err"></div>
+  </div>
+</div>
+
+<!-- ══ STATE 1 — MODE SELECT ════════════════════════════════════════════ -->
+<div id="state-mode" class="state">
+  <div class="mode-title">Comment souhaitez-vous participer ?</div>
+  <div class="mode-room" id="mode-room-label">Salle —</div>
+  <div class="mode-cards">
+    <button class="mode-card" onclick="choosePhone()">
+      <span class="mode-card-icon">📱</span>
+      <div>
+        <div class="mode-card-lbl">Répondre via smartphone</div>
+        <div class="mode-card-sub">Scannez le QR Code avec votre téléphone pour voter</div>
+      </div>
+    </button>
+    <button class="mode-card" onclick="chooseSCORM()">
+      <span class="mode-card-icon">💻</span>
+      <div>
+        <div class="mode-card-lbl">Répondre via ce SCORM</div>
+        <div class="mode-card-sub">Votez directement sur cet écran</div>
+      </div>
+    </button>
+  </div>
+</div>
+
+<!-- ══ STATE 2 — PHONE OBSERVER ═════════════════════════════════════════ -->
+<div id="state-phone" class="state">
+  <div class="phone-qr-section">
+    <div id="phone-qr"></div>
+    <div class="phone-code" id="phone-code-lbl">—</div>
+    <div class="phone-scan-hint">Scannez pour voter sur votre téléphone</div>
+  </div>
+  <div class="phone-live">
+    <div id="phone-pax-count"></div>
+    <div id="phone-timer-wrap">
+      <div id="phone-timer-track"><div id="phone-timer-bar"></div></div>
+      <div id="phone-timer-lbl"></div>
+    </div>
+    <div id="phone-question"></div>
+    <div id="phone-result-area"></div>
+    <div id="phone-status-msg">En attente du début…</div>
+  </div>
+</div>
+
+<!-- ══ STATE 3 — SCORM WAITING ══════════════════════════════════════════ -->
+<div id="state-waiting" class="state">
+  <div class="spinner"></div>
+  <div class="wait-title">En attente du début…</div>
+  <div id="pax-counter">0 / —</div>
+  <div class="pax-sub">participants connectés</div>
+  <div class="pax-track"><div id="pax-fill"></div></div>
+</div>
+
+<!-- ══ STATE 4 — QUIZ ════════════════════════════════════════════════════ -->
+<div id="state-quiz" class="state">
+  <div id="timer-strip"><div id="timer-bar"></div></div>
+  <div class="quiz-hdr">
+    <span id="quiz-qnum">Question —</span>
+    <span id="quiz-timer">—</span>
+  </div>
+  <div id="quiz-question"></div>
+  <div id="multi-hint">Plusieurs bonnes réponses — sélectionnez-les toutes</div>
+  <div id="quiz-choices"></div>
+  <button id="validate-btn" onclick="submitVote()">✓ Valider ma réponse</button>
+  <div id="result-area"></div>
+  <div id="quiz-banner"></div>
+</div>
+
+<!-- ══ STATE 5 — END ═════════════════════════════════════════════════════ -->
+<div id="state-end" class="state">
+  <div class="end-icon">🎓</div>
+  <div id="end-score">—</div>
+  <div id="end-detail"></div>
+  <div id="end-status"></div>
+  <div class="end-thanks">Session terminée — merci pour votre participation !</div>
+  <button id="btn-continue" onclick="continueToNext()">Continuer →</button>
+</div>
+
+<!-- ══ STATE ERR ═════════════════════════════════════════════════════════ -->
+<div id="state-error" class="state">
+  <div class="err-icon">⚠️</div>
+  <div id="err-msg">Erreur de connexion</div>
+  <button class="btn-retry" onclick="location.reload()">Réessayer</button>
+</div>
+
+<!-- SDK servi par le backend — inclut socket.io + logique sync -->
+<script src="/sdk/scorm-sync-sdk.js"></script>
+<script>
+'use strict';
+
+/* ── Constantes ─────────────────────────────────────────────────────────── */
+var BACKEND = window.location.origin;
+var COLORS  = { A:'#3B82F6', B:'#22C55E', C:'#F97316', D:'#A855F7', E:'#EF4444', F:'#EAB308' };
+
+/* ── État global ────────────────────────────────────────────────────────── */
+var socket       = null;
+var roomCode     = '';
+var displayToken = null;   // token display récupéré lors de la validation du code salle
+var mode         = null;   // 'phone' | 'scorm'
+
+// Identité (mode SCORM) — peuplée via postMessage Storyline ou URL params
+var identity = { studentId: null, studentName: null };
+
+// Session quiz (mode SCORM)
+var voted          = false;
+var selectedValues = [];
+var isMulti        = false;
+var currentQ       = null;
+var timerHandle    = null;
+var seenSyncPoints = [];
+var correctCount   = 0;
+var totalAnswered  = 0;
+var lastScore      = null;
+
+// Observateur (mode téléphone)
+var phoneTimerHandle = null;
+var _endPayload      = null;
+
+// Identité reçue par postMessage depuis Storyline (priorité maximale)
+var _learnerName = null;
+var _learnerId   = null;
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'learner-identity') return;
+  if (e.data.name) _learnerName = e.data.name;
+  if (e.data.id)   _learnerId   = e.data.id;
+});
+
+/* ── Init — pré-remplissage URL params ──────────────────────────────────── */
+window.addEventListener('load', function() {
+  var p    = new URLSearchParams(window.location.search);
+  var code = (p.get('room') || '').toUpperCase().trim();
+  if (code) document.getElementById('code-input').value = code;
+
+  // URL params en surcharge (learnerId / learnerName passés par Storyline)
+  var urlId   = p.get('learnerId')   || null;
+  var urlName = p.get('learnerName') || null;
+  if (urlId)   identity.studentId   = urlId;
+  if (urlName) identity.studentName = urlName;
+});
+
+/* ── Utilitaires ────────────────────────────────────────────────────────── */
+function showState(name) {
+  document.querySelectorAll('.state').forEach(function(s) { s.classList.remove('active'); });
+  document.getElementById('state-' + name).classList.add('active');
+}
+function decodeHtml(s) {
+  if (!s) return s || '';
+  var t = document.createElement('textarea'); t.innerHTML = s; return t.value;
+}
+
+/* ── Lecture identité LMS depuis les frames parentes ────────────────────── */
+// Fonctionne quand l'embed et le LMS partagent la même origine (prod).
+// Sur SCORM Cloud + ngrok (cross-origin), window.parent.API est bloqué par
+// le navigateur — le try/catch absorbe le SecurityError sans planter.
+function _getLMSIdentity() {
+  var candidates = [];
+  try { candidates.push(window.parent); } catch(_) {}
+  try { candidates.push(window.parent && window.parent.parent); } catch(_) {}
+  try { candidates.push(window.top); } catch(_) {}
+  for (var i = 0; i < candidates.length; i++) {
+    try {
+      var f   = candidates[i];
+      if (!f) continue;
+      var api = f.API || f.API_1484_11;
+      if (!api) continue;
+      var name = api.LMSGetValue
+        ? api.LMSGetValue('cmi.core.student_name')
+        : api.GetValue('cmi.learner_name');
+      var id = api.LMSGetValue
+        ? api.LMSGetValue('cmi.core.student_id')
+        : api.GetValue('cmi.learner_id');
+      if (name) {
+        console.log('[EMBED LMS]', id, name);
+        return { name: name, id: id || null };
+      }
+    } catch(e) {
+      console.log('[EMBED LMS frame ' + i + '] blocked:', e.message);
+    }
+  }
+  return null;
+}
+
+/* ── STATE 0 — Valider le code salle ────────────────────────────────────── */
+function joinRoom() {
+  var inp = document.getElementById('code-input');
+  roomCode = (inp.value || '').trim().toUpperCase();
+  if (!roomCode) { inp.focus(); return; }
+  var btn = document.getElementById('btn-join');
+  btn.disabled = true; btn.textContent = 'Vérification…';
+  document.getElementById('join-err').textContent = '';
+
+  fetch(BACKEND + '/api/auth/display-token?room=' + encodeURIComponent(roomCode))
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(b) { throw new Error(b.error || 'Salle introuvable'); });
+      return r.json();
+    })
+    .then(function(d) {
+      displayToken = d.token;
+      document.getElementById('mode-room-label').textContent = 'Salle ' + roomCode;
+      showState('mode');
+    })
+    .catch(function(err) {
+      document.getElementById('join-err').textContent = err.message || 'Erreur de connexion';
+      btn.disabled = false; btn.textContent = 'Continuer →';
+    });
+}
+
+/* ── STATE 1 — Choix du mode ─────────────────────────────────────────────── */
+function choosePhone() {
+  mode = 'phone';
+  document.getElementById('phone-code-lbl').textContent = roomCode;
+  showState('phone');
+  showPhoneQR();
+  connectPhone();
+}
+
+function chooseSCORM() {
+  mode = 'scorm';
+  // Priorité : postMessage Storyline > window.parent.API (même origine) > localStorage
+  if (_learnerName) {
+    identity.studentName = _learnerName;
+    if (_learnerId) identity.studentId = _learnerId;
+  }
+  if (!identity.studentName) {
+    var lms = _getLMSIdentity();
+    if (lms) {
+      identity.studentName = lms.name;
+      if (lms.id) identity.studentId = lms.id;
+    }
+  }
+  if (!identity.studentId) {
+    var stored = localStorage.getItem('embed-id');
+    if (!stored) { stored = 'embed-' + Math.random().toString(36).substr(2, 8); localStorage.setItem('embed-id', stored); }
+    identity.studentId = stored;
+  }
+  if (!identity.studentName) {
+    identity.studentName = 'Apprenant-' + identity.studentId.slice(-4).toUpperCase();
+  }
+
+  showState('waiting');
+
+  fetch(BACKEND + '/api/auth/learner-token', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ learnerId: identity.studentId, name: identity.studentName }),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    return fetch(BACKEND + '/api/rooms/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + d.token },
+      body: JSON.stringify({ code: roomCode }),
+    });
+  })
+  .then(function(r) {
+    if (!r.ok) return r.json().then(function(b) { throw new Error(b.error || 'Salle introuvable (HTTP ' + r.status + ')'); });
+    return r.json();
+  })
+  .then(function(d) { connectSCORM(d.token); })
+  .catch(function(err) { setError(err.message || 'Erreur de connexion'); });
+}
+
+/* ── Mode téléphone — QR + observateur ──────────────────────────────────── */
+function loadQR() {
+  return new Promise(function(resolve) {
+    if (window.QRCode) { resolve(); return; }
+    var s = document.createElement('script');
+    s.src = '/sdk/qrcode.min.js'; s.onload = resolve;
+    document.head.appendChild(s);
+  });
+}
+
+function showPhoneQR() {
+  var qrDiv = document.getElementById('phone-qr');
+  if (!qrDiv || !roomCode) return;
+  var url = BACKEND + '/vote?room=' + roomCode;
+  if (_learnerName) {
+    url += '&name=' + encodeURIComponent(_learnerName);
+    if (_learnerId) url += '&id=' + encodeURIComponent(_learnerId);
+  }
+  loadQR().then(function() {
+    qrDiv.innerHTML = '';
+    new window.QRCode(qrDiv, { text: url, width: 220, height: 220, colorDark: '#1E293B', colorLight: '#FFFFFF' });
+  });
+}
+
+function connectPhone() {
+  if (socket) { socket.disconnect(); socket = null; }
+  socket = io({ auth: { token: displayToken }, reconnectionAttempts: 5 });
+
+  socket.on('connect', function() {
+    document.getElementById('phone-status-msg').textContent = 'Connecté — en attente d\'un vote…';
+  });
+  socket.on('connect_error', function() {
+    setError('Connexion au serveur perdue. Rechargez la page.');
+  });
+
+  socket.on('waiting_update', function(d) {
+    var el = document.getElementById('phone-pax-count');
+    el.textContent = (d.waiting || 0) + ' / ' + (d.total || '—') + ' participants connectés';
+    el.style.display = 'block';
+  });
+
+  socket.on('question_data', function(d) {
+    var safe = Object.assign({}, d); delete safe.correct;
+    window._phoneCurrentQ = safe;
+  });
+
+  socket.on('vote_open', function(d) {
+    var qd = d.questionData || window._phoneCurrentQ || {};
+    var safe = Object.assign({}, qd); delete safe.correct;
+    window._phoneCurrentQ = safe;
+    phoneShowVote(d, safe);
+  });
+
+  socket.on('vote_result', function(d) {
+    phoneShowResult(d.votes || {}, d.correctAnswer || null);
+  });
+
+  socket.on('debate_open', function() {
+    clearInterval(phoneTimerHandle);
+    document.getElementById('phone-timer-wrap').style.display = 'none';
+    phoneSetStatus('Débat en cours — 2ème vote à venir…');
+  });
+
+  socket.on('continue_all', function() {
+    clearInterval(phoneTimerHandle);
+    document.getElementById('phone-timer-wrap').style.display = 'none';
+    document.getElementById('phone-question').style.display = 'none';
+    document.getElementById('phone-result-area').style.display = 'none';
+    phoneSetStatus('En attente de la prochaine question…');
+  });
+
+  socket.on('global_pause',  function() { clearInterval(phoneTimerHandle); phoneSetStatus('⏸ Session en pause…'); });
+  socket.on('global_resume', function() { phoneSetStatus('Session reprise — en attente d\'un vote…'); });
+  socket.on('session_complete', function() { phoneSetStatus('Session terminée.'); });
+}
+
+function phoneSetStatus(msg) {
+  var el = document.getElementById('phone-status-msg');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function phoneShowVote(d, qd) {
+  document.getElementById('phone-result-area').style.display = 'none';
+  document.getElementById('phone-status-msg').style.display = 'none';
+  var qEl = document.getElementById('phone-question');
+  if (qd && qd.question) { qEl.textContent = decodeHtml(qd.question); qEl.style.display = 'block'; }
+  else { qEl.style.display = 'none'; }
+  phoneStartTimer(d.timerSeconds || 45);
+}
+
+function phoneStartTimer(seconds) {
+  clearInterval(phoneTimerHandle);
+  var rem = seconds;
+  var bar = document.getElementById('phone-timer-bar');
+  var lbl = document.getElementById('phone-timer-lbl');
+  bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+  lbl.textContent = rem + 's';
+  document.getElementById('phone-timer-wrap').style.display = 'block';
+  phoneTimerHandle = setInterval(function() {
+    rem = Math.max(0, rem - 1);
+    bar.style.transition = 'width 1s linear, background .3s';
+    bar.style.width = Math.round(rem / seconds * 100) + '%';
+    lbl.textContent = rem + 's';
+    if (rem <= 10) bar.classList.add('urgent');
+    if (rem <= 0) clearInterval(phoneTimerHandle);
+  }, 1000);
+}
+
+function phoneShowResult(votes, correctAnswer) {
+  clearInterval(phoneTimerHandle);
+  document.getElementById('phone-timer-wrap').style.display = 'none';
+  document.getElementById('phone-question').style.display = 'none';
+  document.getElementById('phone-status-msg').style.display = 'none';
+  var correct = Array.isArray(correctAnswer) ? correctAnswer : (correctAnswer ? [correctAnswer] : []);
+  var total   = Object.values(votes).reduce(function(a, b) { return a + b; }, 0) || 1;
+  var area    = document.getElementById('phone-result-area');
+  area.innerHTML = '';
+  Object.keys(votes).sort().forEach(function(k) {
+    var pct = Math.round((votes[k] || 0) / total * 100);
+    var isC = correct.indexOf(k) >= 0;
+    var color = COLORS[k] || '#94A3B8';
+    var row = document.createElement('div');
+    row.className = 'pr-row' + (isC ? ' correct' : '');
+    row.innerHTML = '<span class="pr-key" style="color:' + color + '">' + k + '</span>' +
+      '<div class="pr-track"><div class="pr-fill" data-pct="' + pct + '" style="background:' + color + '"></div></div>' +
+      '<span class="pr-pct">' + pct + '%</span>';
+    area.appendChild(row);
+  });
+  area.style.display = 'flex';
+  setTimeout(function() {
+    area.querySelectorAll('.pr-fill').forEach(function(f) { f.style.width = f.getAttribute('data-pct') + '%'; });
+  }, 80);
+}
+
+/* ── Mode SCORM — Participant ─────────────────────────────────────────────── */
+function connectSCORM(token) {
+  if (socket) { socket.disconnect(); socket = null; }
+  socket = io({ auth: { token: token }, reconnectionAttempts: 5 });
+
+  socket.on('connect', function() {
+    socket.emit('learner_arrived', { source: 'scorm-embed', syncPoint: 'q1' });
+  });
+
+  socket.on('connect_error', function() {
+    setError('Connexion au serveur perdue. Rechargez la page.');
+  });
+
+  socket.on('join_error', function(d) {
+    setError((d && d.message) === 'Salle complète'
+      ? 'Salle complète — contactez votre formateur.'
+      : (d && d.message) || 'Impossible de rejoindre la salle.');
+  });
+
+  socket.on('waiting_update', function(d) {
+    var w = d.waiting || 0, t = d.total || 0;
+    document.getElementById('pax-counter').textContent = w + ' / ' + (t || '—');
+    document.getElementById('pax-fill').style.width = (t > 0 ? Math.round(w / t * 100) : 0) + '%';
+  });
+
+  socket.on('question_data', function(d) { currentQ = d; });
+
+  socket.on('vote_open', function(d) {
+    voted = false; selectedValues = [];
+    var qd = d.questionData || currentQ || {};
+    var safe = Object.assign({}, qd); delete safe.correct;
+    enterVote(d, safe);
+  });
+
+  socket.on('vote_ack', function(d) {
+    if (d && !d.ok) {
+      voted = false;
+      document.querySelectorAll('#quiz-choices .c-btn').forEach(function(b) { b.disabled = false; });
+      if (selectedValues.length > 0) document.getElementById('validate-btn').style.display = 'block';
+    }
+  });
+
+  socket.on('vote_result', function(d) { showResult(d.votes || {}, d.correctAnswer || null); });
+
+  socket.on('debate_open', function() { setBanner('Débat en cours — 2ème vote à venir…'); });
+
+  socket.on('continue_all', function(d) {
+    if (d && d.isLastQuestion) {
+      var score = lastScore !== null
+        ? lastScore
+        : (totalAnswered > 0 ? Math.round(correctCount / totalAnswered * 100) : 0);
+      showEnd(score, correctCount, totalAnswered);
+    } else {
+      voted = false;
+      document.getElementById('result-area').style.display = 'none';
+      document.getElementById('quiz-choices').style.display = 'flex';
+      setBanner('Prochaine question dans un instant…');
+    }
+  });
+
+  socket.on('session_complete', function(d) {
+    lastScore = d.score !== undefined ? Math.round(d.score) : null;
+  });
+
+  socket.on('global_pause',  function() { clearInterval(timerHandle); setBanner('⏸ Session en pause — le formateur reprend dans un instant…'); });
+  socket.on('global_resume', function() { hideBanner(); });
+
+  socket.on('skip_sync', function() {
+    voted = false;
+    setBanner('Question passée — prochaine question dans un instant…');
+    document.getElementById('result-area').style.display = 'none';
+    document.getElementById('quiz-choices').style.display = 'flex';
+  });
+
+  socket.on('kicked', function(d) {
+    if (d && d.learnerId && d.learnerId !== identity.studentId) return;
+    setError('Vous avez été retiré de la session par le formateur.');
+  });
+}
+
+/* ── STATE 4 — Quiz actif ───────────────────────────────────────────────── */
+function enterVote(d, qd) {
+  var sp = d.syncPoint || (qd && qd.syncPoint);
+  if (sp && seenSyncPoints.indexOf(sp) === -1) seenSyncPoints.push(sp);
+  var qNum = sp ? seenSyncPoints.indexOf(sp) + 1 : seenSyncPoints.length;
+  document.getElementById('quiz-qnum').textContent = 'Question ' + (qNum || '—');
+
+  var qEl = document.getElementById('quiz-question');
+  if (qd && qd.question) { qEl.textContent = decodeHtml(qd.question); qEl.style.display = 'block'; }
+  else { qEl.style.display = 'none'; }
+
+  isMulti = !!(qd && qd.multipleCorrect);
+  document.getElementById('multi-hint').style.display = isMulti ? 'block' : 'none';
+
+  buildChoices(qd);
+  document.getElementById('result-area').style.display = 'none';
+  document.getElementById('validate-btn').style.display = 'none';
+  document.getElementById('timer-strip').style.display = 'block';
+  hideBanner();
+  startTimer(d.timerSeconds || 45);
+  showState('quiz');
+}
+
+function buildChoices(qd) {
+  currentQ = qd;
+  var keys = (qd && qd.choices) ? Object.keys(qd.choices).sort() : ['A','B','C','D'];
+  var col  = document.getElementById('quiz-choices');
+  col.innerHTML = ''; col.style.display = 'flex';
+  keys.forEach(function(k) {
+    var btn = document.createElement('button');
+    btn.className = 'c-btn'; btn.id = 'cbtn-' + k; btn.setAttribute('data-key', k);
+    btn.onclick = function() { selectChoice(k); };
+    var color = COLORS[k] || '#94A3B8';
+    btn.innerHTML = '<span class="c-key" style="color:' + color + '">' + k + '</span><span class="c-text"></span>';
+    btn.querySelector('.c-text').textContent = decodeHtml((qd && qd.choices && qd.choices[k]) || k);
+    col.appendChild(btn);
+  });
+}
+
+function selectChoice(k) {
+  if (voted) return;
+  var btns = document.querySelectorAll('#quiz-choices .c-btn');
+  if (isMulti) {
+    var i = selectedValues.indexOf(k);
+    if (i >= 0) selectedValues.splice(i, 1); else selectedValues.push(k);
+    btns.forEach(function(b) { b.classList.toggle('selected', selectedValues.indexOf(b.getAttribute('data-key')) >= 0); });
+  } else {
+    selectedValues = [k];
+    btns.forEach(function(b) { b.classList.toggle('selected', b.getAttribute('data-key') === k); });
+  }
+  document.getElementById('validate-btn').style.display = selectedValues.length > 0 ? 'block' : 'none';
+}
+
+function submitVote() {
+  if (voted || selectedValues.length === 0 || !socket) return;
+  voted = true;
+  document.querySelectorAll('#quiz-choices .c-btn').forEach(function(b) { b.disabled = true; });
+  document.getElementById('validate-btn').style.display = 'none';
+  socket.emit('submit_vote', { value: isMulti ? selectedValues.slice() : selectedValues[0] });
+}
+
+function startTimer(seconds) {
+  clearInterval(timerHandle);
+  var rem = seconds;
+  var bar = document.getElementById('timer-bar');
+  var lbl = document.getElementById('quiz-timer');
+  bar.style.transition = 'none'; bar.style.width = '100%'; bar.classList.remove('urgent');
+  lbl.textContent = rem + 's'; lbl.className = 'quiz-timer';
+  timerHandle = setInterval(function() {
+    rem = Math.max(0, rem - 1);
+    bar.style.transition = 'width 1s linear, background .3s';
+    bar.style.width = Math.round(rem / seconds * 100) + '%';
+    lbl.textContent = rem + 's';
+    if (rem <= 10) { bar.classList.add('urgent'); lbl.className = 'quiz-timer urgent'; }
+    if (rem <= 0) clearInterval(timerHandle);
+  }, 1000);
+}
+
+function showResult(votes, correctAnswer) {
+  clearInterval(timerHandle);
+  var correct = Array.isArray(correctAnswer) ? correctAnswer : (correctAnswer ? [correctAnswer] : []);
+  var userCorrect = correct.length > 0 && selectedValues.length > 0 &&
+    selectedValues.slice().sort().join(',') === correct.slice().sort().join(',');
+  if (correct.length > 0) { totalAnswered++; if (userCorrect) correctCount++; }
+  if (selectedValues.length > 0) {
+    selectedValues.forEach(function(v) {
+      var btn = document.getElementById('cbtn-' + v);
+      if (btn) { btn.classList.remove('selected'); btn.classList.add(userCorrect ? 'correct' : 'wrong'); }
+    });
+    if (!userCorrect) {
+      correct.forEach(function(k) { var btn = document.getElementById('cbtn-' + k); if (btn) btn.classList.add('correct'); });
+    }
+  }
+  var total = Object.values(votes).reduce(function(a,b) { return a+b; }, 0) || 1;
+  var area  = document.getElementById('result-area');
+  area.innerHTML = '';
+  Object.keys(votes).sort().forEach(function(k) {
+    var pct = Math.round((votes[k] || 0) / total * 100);
+    var isC = correct.indexOf(k) >= 0;
+    var row = document.createElement('div');
+    row.className = 'r-row' + (isC ? ' correct' : '');
+    var color = COLORS[k] || '#94A3B8';
+    row.innerHTML = '<span class="r-key" style="color:' + color + '">' + k + '</span>' +
+      '<div class="r-track"><div class="r-fill rf-' + k.toLowerCase() + '" data-pct="' + pct + '"></div></div>' +
+      '<span class="r-pct">' + pct + '%</span>';
+    area.appendChild(row);
+  });
+  area.style.display = 'flex';
+  document.getElementById('quiz-choices').style.display = 'none';
+  document.getElementById('quiz-question').style.display = 'none';
+  document.getElementById('timer-strip').style.display = 'none';
+  setTimeout(function() {
+    area.querySelectorAll('.r-fill').forEach(function(f) { f.style.width = f.getAttribute('data-pct') + '%'; });
+  }, 80);
+}
+
+function setBanner(msg) { var b = document.getElementById('quiz-banner'); b.textContent = msg; b.style.display = 'block'; }
+function hideBanner()   { document.getElementById('quiz-banner').style.display = 'none'; }
+
+/* ── STATE 5 — Fin de session ───────────────────────────────────────────── */
+function showEnd(score, correct, total) {
+  clearInterval(timerHandle);
+  var pct  = Math.round(score || 0);
+  var pass = pct >= 50;
+  _endPayload = { score: pct, correct: correct || 0, total: total || 0 };
+  document.getElementById('end-score').textContent  = pct + '%';
+  document.getElementById('end-score').className    = pass ? 'pass' : 'fail';
+  document.getElementById('end-detail').textContent = (correct || 0) + ' / ' + (total || '?') + ' bonnes réponses';
+  document.getElementById('end-status').textContent = pass ? '✓ Réussi' : '✗ À retravailler';
+  document.getElementById('end-status').className   = 'end-status ' + (pass ? 'pass' : 'fail');
+  showState('end');
+  try { parent.postMessage({ type: 'scorm-sync-complete', score: pct, correct: correct || 0, total: total || 0 }, '*'); } catch(_) {}
+}
+
+function continueToNext() {
+  if (_endPayload) {
+    try { parent.postMessage({ type: 'scorm-sync-complete', score: _endPayload.score, correct: _endPayload.correct, total: _endPayload.total }, '*'); } catch(_) {}
+  }
+  try { window.parent.player.next(); return; } catch(_) {}
+  try { window.parent.postMessage({ type: 'next-slide' }, '*'); } catch(_) {}
+}
+
+/* ── Erreur ─────────────────────────────────────────────────────────────── */
+function setError(msg) {
+  document.getElementById('err-msg').textContent = msg;
+  if (socket) { socket.disconnect(); socket = null; }
+  showState('error');
+}
+</script>
+
+<!--
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  STORYLINE TRIGGER — coller dans un Execute JavaScript sur la slide         ║
+║  qui contient la Web Object (Insert > Web Object).                          ║
+║                                                                             ║
+║  CONTEXTE : quiz-embed est une iframe Web Object dans Storyline.            ║
+║  Storyline est le module SCORM racine et monopolise l'API LMS.              ║
+║  L'iframe ne peut pas appeler LMSGetValue directement — le nom doit         ║
+║  être lu par Storyline et transmis via postMessage.                         ║
+║                                                                             ║
+║  1. Diagnostiquer puis envoyer le nom LMS à l'iframe.                      ║
+║  2. Recevoir le score quand l'apprenant termine le quiz.                    ║
+║                                                                             ║
+║  URL de la Web Object : https://votre-backend.com/quiz-embed                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+// ── 1. Lire l'identité LMS et l'envoyer à l'iframe ────────────────────────
+//
+//  La page Storyline parente a déjà initialisé la session LMS et peut lire
+//  window.API directement. L'iframe (quiz-embed) ne peut pas — origines différentes.
+//
+var iframe = document.querySelector('iframe');
+if (!iframe) return;
+
+var name = '', id = '';
+try {
+  var api = window.API || window.API_1484_11;
+  if (api) {
+    name = api.LMSGetValue  ? api.LMSGetValue('cmi.core.student_name') : api.GetValue('cmi.learner_name');
+    id   = api.LMSGetValue  ? api.LMSGetValue('cmi.core.student_id')   : api.GetValue('cmi.learner_id');
+    name = name || '';
+    id   = id   || '';
+  }
+} catch(e) {}
+
+console.log('[STORYLINE NAME]', name, id);
+
+if (name) {
+  iframe.contentWindow.postMessage({
+    type: 'learner-identity',
+    name: name,
+    id:   id || name.toLowerCase().replace(/[\s@.]+/g, '-')
+  }, '*');
+}
+
+// ── 2. Recevoir le score en fin de quiz ────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'scorm-sync-complete') return;
+  var score   = e.data.score   || 0;
+  var correct = e.data.correct || 0;
+  var total   = e.data.total   || 0;
+
+  // Stocker dans des variables Storyline
+  try { player.SetVar('SyncScore',   score);   } catch(e) {}
+  try { player.SetVar('SyncCorrect', correct); } catch(e) {}
+  try { player.SetVar('SyncTotal',   total);   } catch(e) {}
+
+  // Soumettre le score au LMS (SCORM 2004 puis 1.2)
+  try {
+    var api2004 = window.parent && window.parent.API_1484_11;
+    if (api2004) {
+      api2004.SetValue('cmi.score.scaled', (score / 100).toFixed(4));
+      api2004.SetValue('cmi.score.raw', String(score));
+      api2004.SetValue('cmi.completion_status', 'completed');
+      api2004.SetValue('cmi.success_status', score >= 50 ? 'passed' : 'failed');
+      api2004.Commit('');
+    }
+  } catch(e2) {}
+  try {
+    var api12 = window.parent && window.parent.API;
+    if (api12) {
+      api12.LMSSetValue('cmi.core.score.raw', String(score));
+      api12.LMSSetValue('cmi.core.lesson_status', score >= 50 ? 'passed' : 'failed');
+      api12.LMSCommit('');
+    }
+  } catch(e3) {}
+});
+-->
+</body>
+</html>

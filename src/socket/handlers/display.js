@@ -32,11 +32,23 @@ function registerDisplayHandlers(io, socket) {
       socket.emit('question_data', room.currentQuestionData);
     }
     if (room.status === ROOM_STATUS.VOTE) {
+      const elapsed = room.voteOpenedAt ? Math.floor((Date.now() - room.voteOpenedAt) / 1000) : 0;
+      const remainingSeconds = Math.max(0, VOTE_TIMER_SECONDS - elapsed);
       socket.emit('vote_open', {
-        syncPoint:    room.currentSyncPoint,
-        timerSeconds: VOTE_TIMER_SECONDS,
-        isSecondVote: room.vote1Results !== null,
-        questionData: room.currentQuestionData || null,
+        syncPoint:        room.currentSyncPoint,
+        timerSeconds:     VOTE_TIMER_SECONDS,
+        remainingSeconds: remainingSeconds,
+        isSecondVote:     room.vote1Results !== null,
+        questionData:     room.currentQuestionData || null,
+      });
+    }
+    if (room.status === ROOM_STATUS.RESULT) {
+      const qd = room.currentQuestionData || null;
+      socket.emit('vote_result', {
+        votes:         room.votes || {},
+        vote1Results:  room.vote1Results || null,
+        syncPoint:     room.currentSyncPoint,
+        correctAnswer: qd ? (qd.correct || null) : null,
       });
     }
   }).catch(function(err) {

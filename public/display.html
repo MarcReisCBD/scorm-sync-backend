@@ -323,6 +323,19 @@ html, body {
 #overlay-pause.show { display: flex; }
 #overlay-pause-icon  { font-size: 80px; }
 #overlay-pause-label { font-size: 36px; font-weight: 700; color: var(--text-sec); }
+
+/* ── Scores table (end state) ───────────────────────────────────────────── */
+#end-scores-wrap { width: 100%; max-width: 640px; margin: 0 auto; }
+#end-scores-title { font-size: 20px; font-weight: 600; color: var(--text-sec); margin-bottom: 10px; text-align: center; }
+#scores-table { width: 100%; border-collapse: collapse; font-size: 18px; }
+#scores-table th { padding: 6px 12px; border-bottom: 2px solid var(--border); color: var(--text-sec); font-weight: 600; text-align: left; }
+#scores-table td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.sc-rank { width: 36px; text-align: center; color: var(--text-sec); }
+.sc-name { font-weight: 500; }
+.sc-score { font-weight: 700; text-align: right; }
+.sc-frac  { color: var(--text-sec); text-align: right; }
+.score-pass { color: #16A34A; }
+.score-fail { color: #DC2626; }
 </style>
 </head>
 <body>
@@ -436,6 +449,9 @@ html, body {
       </div>
     </div>
     <div id="end-thanks">Merci pour votre participation</div>
+    <div id="end-scores-wrap" style="display:none">
+      <div id="end-scores-title">Scores individuels</div>
+    </div>
   </div>
 </div>
 
@@ -479,6 +495,10 @@ var currentSyncPoint = null;
 var currentQuestionData = null;
 var seenSyncPoints = [];
 
+// Per-learner scores (P3.3)
+var learnersScores  = {};  // learnerId → { score, correct, total }
+var learnerNamesMap = {};  // learnerId → name
+
 /* ── State management ─────────────────────────────────────────────────── */
 var currentState = null;
 
@@ -497,6 +517,20 @@ function showState(name) {
   if (!roomCode) {
     setConnMsg('Paramètre ?room=CODE manquant dans l\'URL');
     return;
+  }
+
+  // Auto-fullscreen si ouvert via "Projeter sur écran secondaire"
+  if (params.get('fullscreen') === '1') {
+    var tryFS = function() {
+      document.documentElement.requestFullscreen().catch(function() {});
+    };
+    // Tentative immédiate (hérite du user gesture window.open)
+    setTimeout(tryFS, 200);
+    // Fallback : au premier clic de l'utilisateur
+    document.addEventListener('click', function onFirstClick() {
+      document.documentElement.requestFullscreen().catch(function() {});
+      document.removeEventListener('click', onFirstClick);
+    });
   }
 
   // Load QR code lib then connect
@@ -525,9 +559,24 @@ function fetchDisplayToken() {
     });
 }
 
+function generateToken() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var result = '';
+  for (var i = 0; i < 8; i++) result += chars[Math.floor(Math.random() * chars.length)];
+  return result;
+}
+
 function setupVoteUrl() {
-  var base = window.location.origin;
-  var url  = base + '/vote?room=' + roomCode;
+  var base  = window.location.origin;
+  var token = generateToken();
+  // Register room-level token async (no studentId — vote.html will ask for name)
+  fetch('/api/auth/register-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: token, roomCode: roomCode }),
+  }).catch(function() {});  // non-fatal — token ready long before first QR scan
+
+  var url = base + '/vote?room=' + roomCode + '&token=' + token;
   document.getElementById('welcome-url').textContent = url;
   document.getElementById('welcome-code').textContent = roomCode;
   if (typeof QRCode !== 'undefined') {
@@ -570,6 +619,12 @@ function connectSocket(token) {
     if (total > 0) totalLearners = total;
     connectedCount = waiting;
     updatePaxCounter(waiting, total);
+    // Collect learner names for scores table
+    if (Array.isArray(d.learners)) {
+      d.learners.forEach(function(l) {
+        if (l.id && l.name) learnerNamesMap[l.id] = l.name;
+      });
+    }
   });
 
   socket.on('question_data', function(d) {
@@ -591,7 +646,10 @@ function connectSocket(token) {
 
     buildVoteState(d, qd);
     showState('vote');
-    startTimer(d.timerSeconds || 45);
+    // remainingSeconds présent = connexion tardive → démarrer au temps restant réel
+    var total     = d.timerSeconds || 45;
+    var remaining = (d.remainingSeconds !== undefined) ? d.remainingSeconds : total;
+    startTimer(remaining, total);
   });
 
   socket.on('vote_progress', function(d) {
@@ -641,8 +699,15 @@ function connectSocket(token) {
   });
 
   socket.on('session_complete', function(d) {
-    buildEndState(d);
-    showState('end');
+    // Collect individual score
+    if (d && d.learnerId) {
+      learnersScores[d.learnerId] = { score: d.score, correct: d.correct, total: d.total };
+    }
+    buildEndState();
+    // If already on end state, just refresh the table without re-triggering the transition
+    if (currentState !== 'end') {
+      showState('end');
+    }
     clearTimerInterval();
   });
 
@@ -675,10 +740,10 @@ function updatePaxCounter(n, total) {
 }
 
 /* ── Timer ────────────────────────────────────────────────────────────── */
-function startTimer(seconds) {
+function startTimer(remaining, total) {
   clearTimerInterval();
-  timerLeft  = seconds;
-  timerTotal = seconds;
+  timerLeft  = remaining;
+  timerTotal = (total !== undefined) ? total : remaining;
   renderTimer();
   timerInterval = setInterval(function() {
     timerLeft = Math.max(0, timerLeft - 1);
@@ -704,6 +769,9 @@ function renderTimer() {
 
 /* ── Build vote state ─────────────────────────────────────────────────── */
 function buildVoteState(d, qd) {
+  // Strip correct answer from display during vote — only reveal on vote_result
+  var safeQd = qd ? Object.assign({}, qd, { correct: undefined }) : {};
+  qd = safeQd;
   var sp   = d.syncPoint || (qd && qd.syncPoint) || '';
   var qNum = spToNum(sp);
   document.getElementById('vote-qnum').textContent = 'Question ' + (qNum || '—');
@@ -861,7 +929,7 @@ function updateBetweenStats() {
 }
 
 /* ── Build end state ──────────────────────────────────────────────────── */
-function buildEndState(sessionData) {
+function buildEndState() {
   var avgScore = null;
   if (sessionStats.totalVotes > 0) {
     avgScore = Math.round(sessionStats.totalCorrect / sessionStats.totalVotes * 100);
@@ -885,6 +953,43 @@ function buildEndState(sessionData) {
     document.getElementById('end-hard').textContent =
       spToLabel(hard) + ' (' + pctFor(perQ, hard) + '%)';
   }
+
+  // Per-learner scores table (populated as session_complete events arrive)
+  renderScoresTable();
+}
+
+function renderScoresTable() {
+  var wrap = document.getElementById('end-scores-wrap');
+  if (!wrap) return;
+  var ids = Object.keys(learnersScores);
+  if (ids.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  // Sort by score descending
+  ids.sort(function(a, b) {
+    return (learnersScores[b].score || 0) - (learnersScores[a].score || 0);
+  });
+
+  var html = '<table id="scores-table"><thead><tr>' +
+    '<th>#</th><th>Participant</th><th>Score</th><th>Réponses</th>' +
+    '</tr></thead><tbody>';
+  ids.forEach(function(id, i) {
+    var s    = learnersScores[id];
+    var name = learnerNamesMap[id] || id.slice(0, 12);
+    var score = s.score !== undefined ? Math.round(s.score) + '%' : '—';
+    var frac  = (s.correct !== undefined && s.total) ? s.correct + '/' + s.total : '—';
+    var cls   = s.score >= 80 ? 'score-pass' : (s.score >= 50 ? '' : 'score-fail');
+    html += '<tr><td class="sc-rank">' + (i + 1) + '</td>' +
+      '<td class="sc-name">' + escHtml(name) + '</td>' +
+      '<td class="sc-score ' + cls + '">' + score + '</td>' +
+      '<td class="sc-frac">' + frac + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function pctFor(perQ, sp) {
@@ -896,6 +1001,10 @@ function pctFor(perQ, sp) {
 /* ── Utilities ────────────────────────────────────────────────────────── */
 function spToNum(sp) {
   if (!sp) return null;
+  // Use play-order index when known (prevents "Question 5923" from UUIDs)
+  var idx = seenSyncPoints.indexOf(sp);
+  if (idx !== -1) return idx + 1;
+  // Fallback: extract first number from string (e.g. "q1", "q2")
   var m = sp.match(/(\d+)/);
   return m ? parseInt(m[1], 10) : null;
 }

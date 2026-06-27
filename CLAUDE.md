@@ -315,6 +315,8 @@ PC (SCORM) ───────────────────────
 | GET | `/admin` | Console formateur (`admin.html`) | Non |
 | GET | `/health` | Health check Azure | Non |
 | GET | `/vote` | Page de vote smartphone (`public/vote.html`) | Non |
+| GET | `/display` | Écran de diffusion présentateur (`public/display.html`) | Non |
+| GET | `/quiz-embed` | Web Object Storyline 360 (`public/quiz-embed.html`) | Non |
 | GET | `/sdk/scorm-sync-sdk.js` | Bundle SDK (socket.io + logique sync) | Non |
 | GET | `/sdk/qrcode.min.js` | Lib QR Code | Non |
 | POST | `/api/auth/trainer-token` | Génère JWT trainer (POC) | Non |
@@ -562,7 +564,7 @@ Refonte complète de `admin.html` :
 | Admin onglet Banque — filtres, sélection rapide/manuelle | ✅ Sprint 2B |
 | SCORM charge questions depuis banque (plus de hardcode) | ✅ Sprint 2B |
 | Écran de diffusion présentateur (`/display`) | ✅ Sprint 2C |
-| Intégration vrai module Storyline 360 | ⬜ Sprint 2D |
+| Page `/quiz-embed` — Web Object Storyline 360 | ✅ Sprint 2D |
 | Déploiement Azure | ⬜ Sprint 3 |
 
 ---
@@ -856,13 +858,58 @@ Accessible via `GET /display?room=CODE` — destiné au projecteur/TV du formate
 
 ---
 
-## Sprint 2D — Intégration Storyline 360 ⬜ À venir
+## Sprint 2D — Page `/quiz-embed` (Web Object Storyline 360) ✅ Terminé
 
-**Objectif** : remplacer `scorm-test/index.html` par un vrai module Storyline 360 utilisant le SDK.
+### `public/quiz-embed.html`
+Accessible via `GET /quiz-embed` — conçu pour être chargé en **Web Object (iframe)** dans Storyline 360.
 
-Les fichiers de référence sont déjà prêts dans `storyline-integration/` :
-- `trigger-quiz-start.js` — trigger JS Storyline : charge SDK, appelle `ScormSync.startQuiz()`
-- `trigger-result.js` — trigger JS Storyline : soumet score au LMS (SCORM 2004 + 1.2)
-- `GUIDE.md` — guide complet : variables, slides, structure HTML, checklist
+**4 états séquentiels dans une seule iframe (sans rechargement)** :
 
-Variables Storyline requises : `SyncRoomCode`, `SyncScore`, `SyncCorrect`, `SyncTotal`, `SyncDone`.
+| État | Déclencheur | Contenu |
+|---|---|---|
+| `join` | Démarrage | Champ code salle + bouton Rejoindre |
+| `waiting` | Après join réussi | Spinner + compteur X/N participants |
+| `quiz` | `vote_open` | Question + choix A–F + timer + résultats |
+| `end` | `continue_all(isLastQuestion:true)` | Score % + bonnes réponses + postMessage |
+
+**Flux socket** : rôle smartphone (`learner_arrived` sans syncPoint), pas `watch_room`.
+- `POST /api/auth/learner-token` → `POST /api/rooms/join` → `io({ auth: {token} })` → `learner_arrived`
+
+**Identité** :
+1. URL params `?learnerId=...&learnerName=...` (passage depuis Storyline)
+2. SDK SCORM via `ScormSync.init()` (détecte SCORM API dans la hiérarchie de frames Storyline)
+3. Fallback localStorage `embed-id`
+
+**Transmission du score** :
+```javascript
+parent.postMessage({ type: 'scorm-sync-complete', score: pct, correct, total }, '*');
+```
+
+**Trigger Storyline** (commentaire `<!-- STORYLINE TRIGGER -->` dans le fichier) :
+- `player.SetVar('SyncScore', score)` + `SyncCorrect` + `SyncTotal` + `SyncDone: true`
+- Commit SCORM 2004 (`API_1484_11`) + SCORM 1.2 (`API`) via `window.parent`
+
+**Variables Storyline requises** :
+
+| Variable | Type | Rôle |
+|---|---|---|
+| `SyncScore` | Number (0) | Score final 0–100 |
+| `SyncCorrect` | Number (0) | Nb bonnes réponses |
+| `SyncTotal` | Number (0) | Nb questions total |
+| `SyncDone` | Boolean (False) | Passe à True → trigger avance slide |
+
+**URL Web Object dans Storyline** :
+```
+https://votre-backend.com/quiz-embed
+https://votre-backend.com/quiz-embed?learnerId={SyncLearnerId}&learnerName={SyncLearnerName}
+```
+
+### Règles importantes
+
+24. **`/quiz-embed` avant express.static** : déclaré avant `app.use(express.static(...))` dans server.js pour éviter un 404.
+25. **Rôle smartphone dans l'embed** : émet `learner_arrived {}` (sans syncPoint) — pas `watch_room`. L'embed est un participant actif, pas un observateur.
+26. **`ScormSync.init()` dans Web Object** : le SDK détecte SCORM API via la chaîne `window.parent`. Dans un Web Object Storyline, l'API LMS est accessible — `getIdentity()` retourne le vrai `student_id` du LMS si trouvé.
+27. **`lastScore` vs calcul local** : `session_complete` cache le score calculé par le backend. `continue_all(isLastQuestion:true)` déclenche `showEnd()` avec ce score. Si `session_complete` n'est pas encore arrivé, `showEnd()` calcule depuis les compteurs locaux (`correctCount / totalAnswered`).
+
+### Objectif initial Sprint 2D (approche alternative — non réalisé)
+Remplacer `scorm-test/index.html` par un vrai module Storyline 360 via SDK. Les fichiers de référence sont disponibles dans `storyline-integration/` : `trigger-quiz-start.js`, `trigger-result.js`, `GUIDE.md`.

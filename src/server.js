@@ -41,10 +41,17 @@ app.use(express.json());
 app.use(rateLimiter);
 
 // Explicit routes AVANT les middlewares static
-app.get('/admin',   (_req, res) => res.sendFile(path.join(__dirname, '..', 'admin.html')));
-app.get('/health',  (_req, res) => res.json({ status: 'ok' }));
-app.get('/vote',    (_req, res) => res.sendFile(path.join(__dirname, '../public/vote.html')));
-app.get('/display', (_req, res) => res.sendFile(path.join(__dirname, '../public/display.html')));
+app.get('/admin',       (_req, res) => res.sendFile(path.join(__dirname, '..', 'admin.html')));
+app.get('/health',     (_req, res) => res.json({ status: 'ok' }));
+app.get('/vote',       (_req, res) => res.sendFile(path.join(__dirname, '../public/vote.html')));
+app.get('/display',    (_req, res) => res.sendFile(path.join(__dirname, '../public/display.html')));
+// quiz-embed est chargé en iframe depuis SCORM Cloud — autoriser tous les frame-ancestors
+app.use('/quiz-embed', (_req, res, next) => {
+  res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy', "frame-ancestors *");
+  next();
+});
+app.get('/quiz-embed', (_req, res) => res.sendFile(path.join(__dirname, '../public/quiz-embed.html')));
 
 app.use(express.static(path.join(__dirname, '..'), { index: 'test.html' }));
 app.use(express.static(path.join(__dirname, '../public')));
