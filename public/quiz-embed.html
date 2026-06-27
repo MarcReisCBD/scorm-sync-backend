@@ -4,6 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quiz synchronisé</title>
+  <!-- Buffer postMessage learner-identity dès le plus tôt possible,
+       avant même le chargement du SDK (script bloquant ligne suivante). -->
+  <script>
+    window.__learnerIdentityBuffer = null;
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'learner-identity') {
+        window.__learnerIdentityBuffer = e.data;
+      }
+    });
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -434,6 +444,12 @@ function choosePhone() {
 function chooseSCORM() {
   mode = 'scorm';
   // Priorité : postMessage Storyline > window.parent.API (même origine) > localStorage
+  // Si le message est arrivé avant que le listener principal soit prêt, le buffer head l'a capturé.
+  if (!_learnerName && window.__learnerIdentityBuffer) {
+    var buf = window.__learnerIdentityBuffer;
+    if (buf.name) _learnerName = buf.name;
+    if (buf.id)   _learnerId   = buf.id;
+  }
   if (_learnerName) {
     identity.studentName = _learnerName;
     if (_learnerId) identity.studentId = _learnerId;
