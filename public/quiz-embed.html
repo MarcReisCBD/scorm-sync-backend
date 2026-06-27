@@ -632,7 +632,7 @@ function connectSCORM(token) {
   socket = io({ auth: { token: token }, reconnectionAttempts: 5 });
 
   socket.on('connect', function() {
-    socket.emit('learner_arrived', { source: 'scorm-embed', syncPoint: 'q1' });
+    socket.emit('learner_arrived', { source: 'scorm-embed' });
   });
 
   socket.on('connect_error', function() {
@@ -673,7 +673,11 @@ function connectSCORM(token) {
   socket.on('debate_open', function() { setBanner('Débat en cours — 2ème vote à venir…'); });
 
   socket.on('continue_all', function(d) {
-    if (d && d.isLastQuestion) {
+    // isLastQuestion peut être false si totalQuestions n'est pas initialisé côté serveur
+    // (IDs UUID au lieu de 'q3'). Fallback fiable : session_complete arrive avant continue_all
+    // et set lastScore — si c'est le cas, on est à la fin de session.
+    var isEnd = (d && d.isLastQuestion) || lastScore !== null;
+    if (isEnd) {
       var score = lastScore !== null
         ? lastScore
         : (totalAnswered > 0 ? Math.round(correctCount / totalAnswered * 100) : 0);
@@ -708,6 +712,7 @@ function connectSCORM(token) {
 
 /* ── STATE 4 — Quiz actif ───────────────────────────────────────────────── */
 function enterVote(d, qd) {
+  console.log('[QUIZ DATA]', qd);
   var sp = d.syncPoint || (qd && qd.syncPoint);
   if (sp && seenSyncPoints.indexOf(sp) === -1) seenSyncPoints.push(sp);
   var qNum = sp ? seenSyncPoints.indexOf(sp) + 1 : seenSyncPoints.length;
@@ -731,7 +736,16 @@ function enterVote(d, qd) {
 
 function buildChoices(qd) {
   currentQ = qd;
-  var keys = (qd && qd.choices) ? Object.keys(qd.choices).sort() : ['A','B','C','D'];
+  // Normalise choices vers { A: "texte", B: "texte" } quel que soit le format reçu
+  var choicesMap = {};
+  if (qd && qd.choices) {
+    if (Array.isArray(qd.choices)) {
+      qd.choices.forEach(function(c) { if (c.letter) choicesMap[c.letter] = c.text || c.letter; });
+    } else {
+      choicesMap = qd.choices;
+    }
+  }
+  var keys = Object.keys(choicesMap).length > 0 ? Object.keys(choicesMap).sort() : ['A','B','C','D'];
   var col  = document.getElementById('quiz-choices');
   col.innerHTML = ''; col.style.display = 'flex';
   keys.forEach(function(k) {
@@ -740,7 +754,7 @@ function buildChoices(qd) {
     btn.onclick = function() { selectChoice(k); };
     var color = COLORS[k] || '#94A3B8';
     btn.innerHTML = '<span class="c-key" style="color:' + color + '">' + k + '</span><span class="c-text"></span>';
-    btn.querySelector('.c-text').textContent = decodeHtml((qd && qd.choices && qd.choices[k]) || k);
+    btn.querySelector('.c-text').textContent = decodeHtml(choicesMap[k] || k);
     col.appendChild(btn);
   });
 }
