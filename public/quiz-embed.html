@@ -322,8 +322,10 @@ var COLORS  = { A:'#3B82F6', B:'#22C55E', C:'#F97316', D:'#A855F7', E:'#EF4444',
 /* ── État global ────────────────────────────────────────────────────────── */
 var socket       = null;
 var roomCode     = '';
-var displayToken = null;   // token display récupéré lors de la validation du code salle
-var mode         = null;   // 'phone' | 'scorm'
+var displayToken  = null;   // token display récupéré lors de la validation du code salle
+var mode          = null;   // 'phone' | 'scorm'
+var _authToken    = null;   // JWT learner enrichi (conservé pour les fetch REST post-connexion)
+var _scormRoomId  = null;   // roomId résolu après /api/rooms/join
 
 // Identité (mode SCORM) — peuplée via postMessage Storyline ou URL params
 var identity = { studentId: null, studentName: null };
@@ -488,7 +490,7 @@ function chooseSCORM() {
     if (!r.ok) return r.json().then(function(b) { throw new Error(b.error || 'Salle introuvable (HTTP ' + r.status + ')'); });
     return r.json();
   })
-  .then(function(d) { connectSCORM(d.token); })
+  .then(function(d) { _authToken = d.token; _scormRoomId = d.roomId; connectSCORM(d.token); })
   .catch(function(err) { setError(err.message || 'Erreur de connexion'); });
 }
 
@@ -654,10 +656,26 @@ function connectSCORM(token) {
   socket.on('question_data', function(d) { currentQ = d; });
 
   socket.on('vote_open', function(d) {
+    console.log('[VOTE_OPEN]', JSON.stringify(d));
+    console.log('[QUESTION_DATA]', JSON.stringify(d.questionData));
     voted = false; selectedValues = [];
-    var qd = d.questionData || currentQ || {};
-    var safe = Object.assign({}, qd); delete safe.correct;
-    enterVote(d, safe);
+
+    function proceed(fetchedQD) {
+      var qd = fetchedQD || d.questionData || currentQ || {};
+      var safe = Object.assign({}, qd); delete safe.correct;
+      enterVote(d, safe);
+    }
+
+    if (!d.questionData && _scormRoomId && _authToken) {
+      fetch(BACKEND + '/api/rooms/' + _scormRoomId + '/current-question', {
+        headers: { 'Authorization': 'Bearer ' + _authToken }
+      })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(data) { proceed(data); })
+      .catch(function() { proceed(null); });
+    } else {
+      proceed(d.questionData);
+    }
   });
 
   socket.on('vote_ack', function(d) {
@@ -735,6 +753,7 @@ function enterVote(d, qd) {
 }
 
 function buildChoices(qd) {
+  console.log('[BUILD_CHOICES input]', JSON.stringify(qd && qd.choices));
   currentQ = qd;
   // Normalise choices vers { A: "texte", B: "texte" } quel que soit le format reçu
   var choicesMap = {};

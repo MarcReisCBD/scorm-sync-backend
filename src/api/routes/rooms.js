@@ -67,6 +67,19 @@ router.delete('/:id', httpAuthMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/rooms/:id/current-question — current question data (any authenticated role)
+router.get('/:id/current-question', httpAuthMiddleware, async (req, res) => {
+  try {
+    const room = await roomService.getRoomById(req.params.id);
+    if (!room) return res.status(404).json({ error: 'Room not found' });
+    if (!room.currentQuestionData) return res.status(204).end();
+    res.json(room.currentQuestionData);
+  } catch (err) {
+    logger.error('getCurrentQuestion failed', { err: err.message });
+    res.status(500).json({ error: 'Could not get current question' });
+  }
+});
+
 // GET /api/rooms/:id/state — trainer gets full room state
 router.get('/:id/state', httpAuthMiddleware, async (req, res) => {
   if (req.user.role !== ROLES.TRAINER) return res.status(403).json({ error: 'Trainers only' });
