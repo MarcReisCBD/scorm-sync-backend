@@ -1865,7 +1865,8 @@ async function runImport() {
 }
 
 // ── Quick select modal ────────────────────────────────────────────────
-function openQuickSelectModal() {
+async function openQuickSelectModal() {
+  if (!banque.modules.length) await banqueLoadModules();
   populateModuleLists();
   setModalMsg('quick', '');
   document.getElementById('modal-quick').style.display = 'flex';
@@ -1950,9 +1951,10 @@ async function persistQuizToBackend() {
 const manualSelected    = new Set();
 const manualQuestionsCache = {}; // id → question object, populated by loadManualList
 
-function openManualSelectModal() {
+async function openManualSelectModal() {
   manualSelected.clear();
   updateManualSelCount();
+  if (!banque.modules.length) await banqueLoadModules();
   populateModuleLists();
   setModalMsg('manual', '');
   document.getElementById('modal-manual').style.display = 'flex';
