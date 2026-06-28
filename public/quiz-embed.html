@@ -632,7 +632,7 @@ function connectSCORM(token) {
   socket = io({ auth: { token: token }, reconnectionAttempts: 5 });
 
   socket.on('connect', function() {
-    socket.emit('learner_arrived', { source: 'scorm-embed' });
+    socket.emit('learner_arrived', { source: 'scorm-embed', syncPoint: 'q1' });
   });
 
   socket.on('connect_error', function() {
