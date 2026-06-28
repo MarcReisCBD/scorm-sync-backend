@@ -326,6 +326,7 @@ var displayToken  = null;   // token display récupéré lors de la validation d
 var mode          = null;   // 'phone' | 'scorm'
 var _authToken    = null;   // JWT learner enrichi (conservé pour les fetch REST post-connexion)
 var _scormRoomId  = null;   // roomId résolu après /api/rooms/join
+var _questions    = [];     // questions chargées depuis /api/rooms/:id/quiz/quiz1/questions
 
 // Identité (mode SCORM) — peuplée via postMessage Storyline ou URL params
 var identity = { studentId: null, studentName: null };
@@ -628,13 +629,40 @@ function phoneShowResult(votes, correctAnswer) {
   }, 80);
 }
 
+/* ── Chargement des questions depuis la banque ──────────────────────────── */
+function loadQuizQuestions() {
+  if (!_scormRoomId || _questions.length > 0) return;
+  fetch(BACKEND + '/api/rooms/' + _scormRoomId + '/quiz/quiz1/questions')
+    .then(function(r) { return r.ok ? r.json() : []; })
+    .then(function(data) {
+      if (!Array.isArray(data) || data.length === 0) return;
+      _questions = data.map(function(q) {
+        return {
+          question:        q.text,
+          choices:         q.choices,         // [{letter, text, correct}] — buildChoices normalise
+          multipleCorrect: q.multiple_correct || 0,
+          correct:         q.correct,
+        };
+      });
+    })
+    .catch(function() {});
+}
+
+function getQuestionBySyncPoint(syncPoint) {
+  if (!syncPoint || _questions.length === 0) return null;
+  var m = syncPoint.match(/(\d+)$/);          // 'q1' → 1, 'q2' → 2, etc.
+  if (!m) return null;
+  var idx = parseInt(m[1], 10) - 1;
+  return (idx >= 0 && _questions[idx]) ? _questions[idx] : null;
+}
+
 /* ── Mode SCORM — Participant ─────────────────────────────────────────────── */
 function connectSCORM(token) {
   if (socket) { socket.disconnect(); socket = null; }
   socket = io({ auth: { token: token }, reconnectionAttempts: 5 });
 
   socket.on('connect', function() {
-    socket.emit('learner_arrived', { source: 'scorm-embed' });
+    socket.emit('learner_arrived', { source: 'scorm-embed', syncPoint: 'q1' });
   });
 
   socket.on('connect_error', function() {
@@ -648,6 +676,7 @@ function connectSCORM(token) {
   });
 
   socket.on('waiting_update', function(d) {
+    loadQuizQuestions();   // idempotent — charge les questions une seule fois
     var w = d.waiting || 0, t = d.total || 0;
     document.getElementById('pax-counter').textContent = w + ' / ' + (t || '—');
     document.getElementById('pax-fill').style.width = (t > 0 ? Math.round(w / t * 100) : 0) + '%';
@@ -657,7 +686,7 @@ function connectSCORM(token) {
 
   socket.on('vote_open', function(d) {
     voted = false; selectedValues = [];
-    var qd = d.questionData || currentQ || {};
+    var qd = d.questionData || getQuestionBySyncPoint(d.syncPoint) || currentQ || {};
     var safe = Object.assign({}, qd); delete safe.correct;
     enterVote(d, safe);
   });
@@ -737,7 +766,6 @@ function enterVote(d, qd) {
 }
 
 function buildChoices(qd) {
-  console.log('[BUILD_CHOICES input]', JSON.stringify(qd && qd.choices));
   currentQ = qd;
   // Normalise choices vers { A: "texte", B: "texte" } quel que soit le format reçu
   var choicesMap = {};
