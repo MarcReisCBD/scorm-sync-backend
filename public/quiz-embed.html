@@ -634,7 +634,7 @@ function connectSCORM(token) {
   socket = io({ auth: { token: token }, reconnectionAttempts: 5 });
 
   socket.on('connect', function() {
-    socket.emit('learner_arrived', { source: 'scorm-embed', syncPoint: 'q1' });
+    socket.emit('learner_arrived', { source: 'scorm-embed' });
   });
 
   socket.on('connect_error', function() {
@@ -656,38 +656,10 @@ function connectSCORM(token) {
   socket.on('question_data', function(d) { currentQ = d; });
 
   socket.on('vote_open', function(d) {
-    console.log('[VOTE_OPEN]', JSON.stringify(d));
-    console.log('[QUESTION_DATA]', JSON.stringify(d.questionData));
     voted = false; selectedValues = [];
-
-    function proceed(fetchedQD) {
-      var qd = fetchedQD || d.questionData || currentQ || {};
-      var safe = Object.assign({}, qd); delete safe.correct;
-      enterVote(d, safe);
-    }
-
-    if (!d.questionData && _scormRoomId && _authToken) {
-      var _pollStart = Date.now();
-      var _pollMax = 5000;
-      var _pollInterval = 500;
-      (function pollQuestionData() {
-        fetch(BACKEND + '/api/rooms/' + _scormRoomId + '/current-question', {
-          headers: { 'Authorization': 'Bearer ' + _authToken }
-        })
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(data) {
-          if (data) { proceed(data); }
-          else if (Date.now() - _pollStart < _pollMax) { setTimeout(pollQuestionData, _pollInterval); }
-          else { proceed(null); }
-        })
-        .catch(function() {
-          if (Date.now() - _pollStart < _pollMax) { setTimeout(pollQuestionData, _pollInterval); }
-          else { proceed(null); }
-        });
-      })();
-    } else {
-      proceed(d.questionData);
-    }
+    var qd = d.questionData || currentQ || {};
+    var safe = Object.assign({}, qd); delete safe.correct;
+    enterVote(d, safe);
   });
 
   socket.on('vote_ack', function(d) {
