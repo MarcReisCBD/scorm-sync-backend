@@ -667,12 +667,24 @@ function connectSCORM(token) {
     }
 
     if (!d.questionData && _scormRoomId && _authToken) {
-      fetch(BACKEND + '/api/rooms/' + _scormRoomId + '/current-question', {
-        headers: { 'Authorization': 'Bearer ' + _authToken }
-      })
-      .then(function(r) { return r.ok ? r.json() : null; })
-      .then(function(data) { proceed(data); })
-      .catch(function() { proceed(null); });
+      var _pollStart = Date.now();
+      var _pollMax = 5000;
+      var _pollInterval = 500;
+      (function pollQuestionData() {
+        fetch(BACKEND + '/api/rooms/' + _scormRoomId + '/current-question', {
+          headers: { 'Authorization': 'Bearer ' + _authToken }
+        })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (data) { proceed(data); }
+          else if (Date.now() - _pollStart < _pollMax) { setTimeout(pollQuestionData, _pollInterval); }
+          else { proceed(null); }
+        })
+        .catch(function() {
+          if (Date.now() - _pollStart < _pollMax) { setTimeout(pollQuestionData, _pollInterval); }
+          else { proceed(null); }
+        });
+      })();
     } else {
       proceed(d.questionData);
     }

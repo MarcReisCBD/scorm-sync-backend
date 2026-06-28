@@ -6,6 +6,17 @@ const logger = require('../../utils/logger');
 const QUORUM = parseFloat(process.env.QUORUM_PERCENT || '90') / 100;
 const VOTE_TIMER_SECONDS = parseInt(process.env.VOTE_TIMER_SECONDS || '45', 10);
 
+// Attend que currentQuestionData soit disponible dans Redis (race condition avec sendQuestionData)
+async function waitForQuestionData(roomId, maxWaitMs = 3000, intervalMs = 300) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    const room = await roomService.getRoomById(roomId);
+    if (room && room.currentQuestionData) return room;
+  }
+  return roomService.getRoomById(roomId);
+}
+
 // Per-room arrival lock — sérialise les learner_arrived pour éviter les race conditions Redis
 // (plusieurs apprenants se connectant simultanément écraseraient waitingLearners les uns les autres)
 const _arrivalChains = new Map();
@@ -142,6 +153,19 @@ function registerLearnerHandlers(io, socket) {
           updated.autoVote !== false
         ) {
           logger.info('Quorum reached, auto-opening vote', { roomId, syncPoint });
+
+          // Si currentQuestionData est absent, attendre jusqu'à 3s (race avec sendQuestionData du SCORM)
+          let roomForVote = updated;
+          if (!roomForVote.currentQuestionData) {
+            logger.info('[quorum] currentQuestionData null — waiting up to 3s', { roomId, syncPoint });
+            roomForVote = await waitForQuestionData(roomId);
+            if (roomForVote && roomForVote.currentQuestionData) {
+              logger.info('[quorum] currentQuestionData reçu après attente', { roomId, syncPoint });
+            } else {
+              logger.warn('[quorum] currentQuestionData toujours null après 3s — ouverture du vote quand même', { roomId, syncPoint });
+            }
+          }
+
           const opened = await voteService.openVote(roomId, 1, {
             syncPoint,
             onExpire: async (rid) => {
